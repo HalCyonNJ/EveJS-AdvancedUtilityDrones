@@ -17,12 +17,12 @@ const REQUIRED_FILES = Object.freeze([
   path.join("server", "src", "services", "drone", "droneRuntime.js"),
 ]);
 // Everything under the mod root that belongs to the development checkout only.
-// The installer prunes these from an already-installed folder and the packager
-// keeps them out of the payload, so one list governs both.
-const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "tools", "dist", "node_modules", ".git"]);
-// BuildPackage.bat writes the release archives; it is a development tool, never a
-// file the installed mod folder needs.
-const DEV_ONLY_FILES = Object.freeze(["BuildPackage.bat"]);
+// The installer prunes these from an already-installed folder, so an installed
+// mods\AlternateMiningDrones holds the payload and nothing else.
+const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "node_modules", ".git"]);
+// Development files at the mod root. The packaging step is gone (the GitHub
+// repository is the distribution), so nothing needs listing here today.
+const DEV_ONLY_FILES = Object.freeze([]);
 const DOCKER_ENTRYPOINT = path.join("docker", "entrypoint.sh");
 // The native entry point. Deliberately not server/package.json: that file is
 // an input to the image's dependency layer, so editing it forces npm ci to

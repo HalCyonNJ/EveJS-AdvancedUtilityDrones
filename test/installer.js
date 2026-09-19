@@ -857,25 +857,18 @@ function register(harness) {
     }
   });
 
-  test("installer: the packaged installer carries every module it requires", () => {
-    const builder = path.join(modDir, "tools/build-package.js");
-    if (!fs.existsSync(builder)) {
-      console.log("     SKIP packaging sources are not shipped beside this mod");
-      return;
-    }
-    const source = fs.readFileSync(builder, "utf8");
-    const start = source.indexOf("INSTALLER_FILES = Object.freeze([");
-    const end = source.indexOf("]);", start);
-    assert.ok(start > 0 && end > start, "build-package.js must keep its INSTALLER_FILES list");
-    const listed = new Set([...source.slice(start, end).matchAll(/"([^"]+)"/gu)].map((match) => match[1]));
-    // Every module the entry points pull in has to travel with them, or the
-    // distributed installer dies on require() before it can print anything.
+  test("installer: every module the entry points require sits beside them", () => {
+    // No archive is built any more, so the installer runs straight out of this
+    // folder - a require() naming a module that is not here would fail the
+    // moment anyone ran it, which is exactly what this catches.
     for (const entry of ["install.js", "uninstall.js", "update.js"]) {
       const text = fs.readFileSync(path.join(installerDir, entry), "utf8");
       for (const match of text.matchAll(/require\("(\.\/[^"]+)"\)/gu)) {
         const relative = `${match[1].slice(2)}.js`;
-        assert.ok(listed.has(relative), `${entry} requires ${relative}, which build-package.js does not ship`);
-        assert.ok(fs.existsSync(path.join(installerDir, ...relative.split("/"))), `${relative} must exist`);
+        assert.ok(
+          fs.existsSync(path.join(installerDir, ...relative.split("/"))),
+          `${entry} requires ${relative}, which is not beside it`,
+        );
       }
     }
   });

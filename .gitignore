@@ -4,9 +4,6 @@
 # Installed dependencies
 node_modules/
 
-# Built artifacts: the two zips are attached to GitHub Releases, not committed.
-dist/
-
 # Scratch
 *.log
 *.tmp

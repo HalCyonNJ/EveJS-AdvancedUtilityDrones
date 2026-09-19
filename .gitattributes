@@ -1,6 +1,6 @@
 # Developed and shipped with LF endings. The Windows batch files are -text so
-# their bytes are never rewritten on checkout (BuildPackage.bat and the
-# installer .bat files are CRLF, RunTests.bat is LF - that is how they ship).
+# their bytes are never rewritten on checkout (the installer .bat files are CRLF,
+# RunTests.bat is LF - that is how they ship).
 * text=auto eol=lf
 *.bat -text
 *.zip binary

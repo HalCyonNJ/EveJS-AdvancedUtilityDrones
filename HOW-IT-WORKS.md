@@ -703,14 +703,14 @@ the per-tag `Source code (zip)` GitHub generates is the release artifact: there 
 and no archive to keep, because the installer half and the payload are the same tree the user
 downloads. This replaced the old `BuildPackage.bat` / `node tools/build-package.js` step, which wrote
 two zips into `dist/` - an installer package (`install.bat` + `installer/lib/` + the payload inside
-`AlternateMiningDrones/`) and a launcher package (the payload folder alone). `dist/` was deleted on
-2026-09-20 and `BuildPackage.bat` is no longer a distribution path.
+`AlternateMiningDrones/`) and a launcher package (the payload folder alone). `dist/`, `BuildPackage.bat` and
+`tools/build-package.js` were all deleted on 2026-09-20, so there is no packaging step left to run.
 
-What still matters is the pruning contract, which now serves only the installer: `installer/`, `tools/`,
-`dist/`, `node_modules/`, `.git/` and `BuildPackage.bat` are development-only and are listed in
-`DEV_ONLY_DIRECTORIES` / `DEV_ONLY_FILES` in `installer/lib/deployment.js`, which is what keeps them out
-of an installed `mods/AlternateMiningDrones` folder. That list also governed the packager's payload
-half, which is why a leaked development file used to be the failure to look for.
+What still matters is the pruning contract, which serves the installer alone: `installer/`, `node_modules/` and
+`.git/` are development-only and are listed in `DEV_ONLY_DIRECTORIES` in
+`installer/lib/deployment.js`, which is what keeps them out of an installed `mods/AlternateMiningDrones`.
+`DEV_ONLY_FILES` is empty now that the packaging tools are gone - if a development file ever appears at
+the mod root again, that is the list to put it in.
 
 `update.js` is the same program as `install.js` with a different label: re-running the installer already
 archives the folder it is about to replace and re-applies the same idempotent registrations, and
