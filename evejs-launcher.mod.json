@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 3,
+  "id": "alternateminingdrones",
+  "displayName": "Alternate Mining Drones",
+  "version": "1.3.0",
+  "description": "Launched mining drones pick their own rocks: they fly to the nearest ore or ice inside the ship's drone control range, start mining, and recall themselves when the mining hold fills or one of them takes fire. /atm filter turns that into a priority list, and every reply prints it as one numbered list per kind of rock: add takes rock names or type IDs, move reorders with the number the reply printed, del drops an entry, clear empties one kind, and grade on sends the drones to the richest grade of a rock in range before the plainer ones. A mistyped rock name is answered with the one it meant. /atm copy list shows who has a setup saved here, and /atm copy <name|id> hands one character's whole setup to another, which is what a multibox fleet wants. Every character drives it from ordinary chat, so no staff rights are needed, and what they choose is saved per character. Server-side only; no client change.",
+  "kind": "loader",
+  "supportedBackends": [
+    "native"
+  ],
+  "activation": {
+    "strategy": "loader_rename"
+  },
+  "restart": "game_server",
+  "compatibility": {
+    "evejsVersions": [
+      "0.12.8"
+    ]
+  }
+}

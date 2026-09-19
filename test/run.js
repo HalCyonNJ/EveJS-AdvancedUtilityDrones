@@ -1,0 +1,2579 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const path = require("node:path");
+
+const configModule = require(path.join(__dirname, "..", "config.js"));
+const { createRuntime } = require(path.join(__dirname, "..", "lib", "runtime.js"));
+const chatCommand = require(path.join(__dirname, "..", "lib", "chatCommand.js"));
+const plainChat = require(path.join(__dirname, "..", "lib", "plainChat.js"));
+const playerSettings = require(path.join(__dirname, "..", "lib", "playerSettings.js"));
+const commandScope = require(path.join(__dirname, "..", "lib", "commandScope.js"));
+const fs = require("node:fs");
+const os = require("node:os");
+
+const modDir = path.resolve(__dirname, "..");
+// Requiring the loader installs it against the real mod directory, which is
+// what the three loader tests below then exercise and restore.
+const loaderModule = require(path.join(__dirname, "..", "loader.js"));
+
+const ORE_DRONE_TYPE = 10246;
+const ICE_DRONE_TYPE = 43699;
+const LINK_AUGMENTOR_TYPE = 23527;
+const DRONE_AVIONICS_TYPE = 3437;
+const ADVANCED_DRONE_AVIONICS_TYPE = 23566;
+const ORE_HOLD_FLAG = 182;
+const GENERAL_MINING_HOLD_FLAG = 134;
+const GAS_HOLD_FLAG = 135;
+const ICE_HOLD_FLAG = 181;
+const CARGO_HOLD_FLAG = 5;
+const ICE_YIELD_TYPE = 16264;
+
+const TYPE_NAMES = {
+  [ORE_DRONE_TYPE]: "Mining Drone I",
+  [ICE_DRONE_TYPE]: "Ice Harvesting Drone I",
+  [LINK_AUGMENTOR_TYPE]: "Drone Link Augmentor I",
+  [DRONE_AVIONICS_TYPE]: "Drone Avionics",
+  [ADVANCED_DRONE_AVIONICS_TYPE]: "Advanced Drone Avionics",
+  1230: "Veldspar",
+  1231: "Dense Veldspar",
+  1224: "Pyroxeres",
+  16264: "Blue Ice",
+  16262: "Glacial Mass",
+  46678: "Brimful Bitumens",
+  // A rock whose name is two words, which is what a line typed without a comma
+  // has to put back together: "dark" and "ochre" each match this one on their
+  // own, so splitting them apart never reached the warning line.
+  17425: "Dark Ochre",
+  17426: "Dark Ochre II-Grade",
+};
+
+// groupID per type, as the SDE carries it: 1230/1224 are ordinary asteroid
+// groups, 16264 is the Ice group and 46678 sits in 1922 Rare Moon Asteroids.
+const TYPE_GROUPS = {
+  1230: 18,
+  1231: 18,
+  1224: 19,
+  16264: 465,
+  16262: 465,
+  46678: 1922,
+  17425: 18,
+  17426: 18,
+};
+
+const MOON_ORE_TYPE = 46678;
+const PYROXERES_TYPE = 1224;
+const DENSE_VELDSPAR_TYPE = 1231;
+
+// The item-types table the ore-name catalogue reads, as the server holds it:
+// every rock in the game is category 25, and the group it sits in says which
+// kind it is. The catalogue only ever reads a filter queue back to the player,
+// so the handful of rocks these tests queue is all it needs.
+const ORE_TYPE_ROWS = Object.entries(TYPE_NAMES)
+  .filter(([typeID]) => TYPE_GROUPS[typeID])
+  .map(([typeID, name]) => ({
+    typeID: Number(typeID),
+    name,
+    groupID: TYPE_GROUPS[typeID],
+    categoryID: 25,
+    groupName: "",
+  }));
+
+const TYPE_ATTRIBUTES = {
+  [LINK_AUGMENTOR_TYPE]: { 459: 20000 },
+  [DRONE_AVIONICS_TYPE]: { 459: 5000 },
+  [ADVANCED_DRONE_AVIONICS_TYPE]: { 459: 3000 },
+  1373: { 458: 20000 },
+};
+
+const tests = [];
+function test(name, fn) {
+  tests.push({ name, fn });
+}
+
+function toIntSafe(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : 0;
+}
+
+function makeConfig(overrides = {}) {
+  return {
+    ...configModule.DEFAULTS,
+    problems: [],
+    // The fixtures below drive tiny synthetic timestamps, so the launch delay
+    // and the state-replay schedule are switched off here and exercised by
+    // their own tests instead.
+    postLaunchDelayMs: 0,
+    stateRefreshScheduleMs: [],
+    ...overrides,
+  };
+}
+
+// A throwaway players file, so a test never writes into the repository.
+function makePlayersFile(label) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-" + label + "-"));
+  return { dir, file: path.join(dir, "alternateMiningDrones.players.json") };
+}
+
+function makeDrone(options) {
+  return {
+    itemID: options.itemID,
+    typeID: options.typeID,
+    categoryID: 18,
+    controllerID: options.controllerID,
+    position: options.position || { x: 0, y: 0, z: 0 },
+    radius: 10,
+    activityState: options.activityState ?? 0,
+    droneCommand: options.droneCommand ?? null,
+    droneAssist: null,
+    conditionState: options.conditionState || {},
+    shieldCapacity: options.shieldCapacity ?? 0,
+    armorHP: 0,
+    structureHP: 0,
+  };
+}
+
+function makeRock(itemID, kind, yieldTypeID, distanceMeters, unitVolume = 0.1) {
+  return {
+    entity: {
+      itemID,
+      typeID: yieldTypeID,
+      categoryID: 25,
+      position: { x: distanceMeters, y: 0, z: 0 },
+      radius: 0,
+    },
+    state: {
+      entityID: itemID,
+      yieldKind: kind,
+      yieldTypeID,
+      remainingQuantity: 1000,
+      unitVolume,
+    },
+  };
+}
+
+function makeWorld(options = {}) {
+  const shipEntity = {
+    itemID: 1000,
+    typeID: 28352,
+    categoryID: 6,
+    kind: "ship",
+    ownerID: 7,
+    characterID: 7,
+    position: { x: 0, y: 0, z: 0 },
+    radius: 500,
+    mode: "STOP",
+    warpState: null,
+  };
+  const drones = options.drones || [
+    makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+    makeDrone({ itemID: 2002, typeID: ICE_DRONE_TYPE, controllerID: 1000 }),
+  ];
+  const rocks = options.rocks || [
+    makeRock(3001, "ore", 1230, 10000),
+    makeRock(3002, "ore", 1230, 30000),
+    makeRock(3003, "ice", 16264, 8000, 1),
+  ];
+  // staleRock is present in the scene but missing from the mining cache until
+  // something drops the cache; unknownMineableEntities look mineable forever and
+  // are never accepted into it. Both exist to exercise the stale-cache rebuild.
+  const staleRock = options.staleRock || null;
+  const unknownMineableEntities = options.unknownMineableEntities || [];
+  const entities = new Map();
+  entities.set(shipEntity.itemID, shipEntity);
+  for (const drone of drones) {
+    entities.set(drone.itemID, drone);
+  }
+  for (const rock of rocks) {
+    entities.set(rock.entity.itemID, rock.entity);
+  }
+  for (const entity of unknownMineableEntities) {
+    entities.set(entity.itemID, entity);
+  }
+  if (staleRock) {
+    entities.set(staleRock.entity.itemID, staleRock.entity);
+  }
+  const scene = {
+    systemID: 30000142,
+    dynamicEntities: new Map(drones.map((drone) => [drone.itemID, drone])),
+    droneEntityIDs: new Set(drones.map((drone) => drone.itemID)),
+    staticEntities: [
+      ...rocks.map((rock) => rock.entity),
+      ...unknownMineableEntities,
+      ...(staleRock ? [staleRock.entity] : []),
+    ],
+    getEntityByID: (entityID) => entities.get(Number(entityID)) || null,
+  };
+  const byEntityID = new Map(rocks.map((rock) => [rock.entity.itemID, rock.state]));
+  const miningState = {
+    rebuilds: 0,
+    isMineableStaticEntity: (entity) => Number(entity && entity.categoryID) === 25,
+    ensureSceneMiningState: (sceneRef) => {
+      const current = sceneRef ? sceneRef._miningRuntimeState : null;
+      if (current && current.byEntityID) {
+        return current;
+      }
+      if (sceneRef && current === null) {
+        // A genuine rebuild, after something dropped the scene cache: only now
+        // does a rock that spawned late show up in the cache at all.
+        miningState.rebuilds += 1;
+        if (staleRock) {
+          byEntityID.set(staleRock.entity.itemID, staleRock.state);
+        }
+      }
+      const cache = { byEntityID };
+      if (sceneRef) {
+        sceneRef._miningRuntimeState = cache;
+      }
+      return cache;
+    },
+  };
+
+  const calls = { mine: [], returnBay: [] };
+  const shipItem = { itemID: 1000, typeID: 28352 };
+  const holdCapacityByFlag = {
+    [ORE_HOLD_FLAG]: options.oreHoldCapacity ?? 1000,
+    [GENERAL_MINING_HOLD_FLAG]: options.generalMiningHoldCapacity ?? 0,
+    [CARGO_HOLD_FLAG]: options.cargoCapacity ?? 500,
+  };
+  const containerItems = options.containerItems || [];
+  const skillMap = new Map([
+    [DRONE_AVIONICS_TYPE, { typeID: DRONE_AVIONICS_TYPE, level: options.droneAvionicsLevel ?? 5 }],
+    [
+      ADVANCED_DRONE_AVIONICS_TYPE,
+      { typeID: ADVANCED_DRONE_AVIONICS_TYPE, level: options.advancedDroneAvionicsLevel ?? 5 },
+    ],
+  ]);
+  const fittedItems = options.fittedItems || [
+    { itemID: 5001, typeID: LINK_AUGMENTOR_TYPE, flagID: 27 },
+    { itemID: 5002, typeID: LINK_AUGMENTOR_TYPE, flagID: 28 },
+    { itemID: 5003, typeID: LINK_AUGMENTOR_TYPE, flagID: 29 },
+  ];
+  const session = { characterID: 7, _space: { systemID: 30000142 } };
+
+  const deps = {
+    getDroneRuntime: () => ({
+      commandMineRepeatedly: (activeSession, droneIDs, targetID) => {
+        calls.mine.push({ session: activeSession, droneIDs, targetID });
+        return { success: true };
+      },
+      commandReturnBay: (activeSession, droneIDs) => {
+        calls.returnBay.push({ session: activeSession, droneIDs });
+        return { success: true };
+      },
+      buildDroneStateNotificationTuple: (entity) => [
+        toIntSafe(entity && entity.itemID),
+        7,
+        toIntSafe(entity && entity.controllerID),
+        toIntSafe(entity && entity.activityState),
+        toIntSafe(entity && entity.typeID),
+        7,
+        toIntSafe(entity && entity.targetID) || null,
+      ],
+      normalizeDroneIDList: (ids) => (
+        Array.isArray(ids)
+          ? ids.map((value) => Number(value)).filter((value) => value > 0)
+          : []
+      ),
+      _testing: {
+        canPlayerCompanionActOnTarget: () => options.canActOnTarget !== false,
+        resolveRuntimeSceneForSession: (_space, activeSession) => (
+          Number(activeSession && activeSession.characterID) === 7 ? scene : null
+        ),
+      },
+    }),
+    getDroneDogma: () => ({
+      _testing: {
+        getControllerDogmaContext: () => ({
+          skillMap,
+          fittedItems,
+          fingerprint: options.fingerprint || "fingerprint-a",
+        }),
+      },
+    }),
+    getMiningRuntimeState: () => miningState,
+    getMiningInventory: () => ({
+      MINING_HOLD_FLAGS: {
+        GENERAL_MINING_HOLD: GENERAL_MINING_HOLD_FLAG,
+        SPECIALIZED_GAS_HOLD: GAS_HOLD_FLAG,
+        SPECIALIZED_ICE_HOLD: ICE_HOLD_FLAG,
+        SPECIALIZED_ASTEROID_HOLD: ORE_HOLD_FLAG,
+      },
+      getShipHoldCapacityByFlag: (resourceState, flagID) => (
+        resourceState.holdCapacityByFlag[flagID] || 0
+      ),
+      getPreferredMiningHoldFlagForType: (_resourceState, itemOrTypeID) => (
+        Number(itemOrTypeID) === ICE_YIELD_TYPE ? ICE_HOLD_FLAG : ORE_HOLD_FLAG
+      ),
+    }),
+    getLiveFittingState: () => ({
+      buildShipResourceState: () => ({
+        cargoCapacity: holdCapacityByFlag[CARGO_HOLD_FLAG],
+        holdCapacityByFlag,
+      }),
+    }),
+    getItemTypeRegistry: () => ({
+      resolveItemByTypeID: (typeID) => (TYPE_NAMES[typeID]
+        ? { typeID, name: TYPE_NAMES[typeID], groupID: TYPE_GROUPS[typeID] || 0 }
+        : null),
+    }),
+    getReferenceData: () => ({
+      TABLE: { ITEM_TYPES: "itemTypes" },
+      readStaticRows: () => ORE_TYPE_ROWS,
+    }),
+    getSessionRegistry: () => ({
+      findSessionByCharacterID: (characterID) => (
+        Number(characterID) === 7 ? session : null
+      ),
+    }),
+    getCharacterState: () => ({
+      getActiveShipRecord: () => shipItem,
+    }),
+    getSpaceRuntime: () => ({}),
+    getSimulationInventoryProjection: () => ({
+      findItemById: (itemID) => (Number(itemID) === 1000 ? shipItem : null),
+      listContainerItems: () => containerItems,
+    }),
+    getItemStore: () => ({ ITEM_FLAGS: { CARGO_HOLD: CARGO_HOLD_FLAG } }),
+    getActiveImplantModifiers: () => ({}),
+    getAttributeIDByNames: (...names) => {
+      for (const name of names) {
+        if (name === "droneRangeBonus") return 459;
+        if (name === "droneControlDistance") return 458;
+      }
+      return null;
+    },
+    getTypeAttributeValue: (typeID, ...names) => {
+      const attributes = TYPE_ATTRIBUTES[typeID] || {};
+      for (const name of names) {
+        if (name === "droneRangeBonus") return attributes[459] ?? null;
+        if (name === "droneControlDistance") return attributes[458] ?? null;
+      }
+      return null;
+    },
+    buildEffectiveItemAttributeMap: (itemOrTypeID) => {
+      const typeID = itemOrTypeID && typeof itemOrTypeID === "object"
+        ? itemOrTypeID.typeID
+        : itemOrTypeID;
+      return { ...(TYPE_ATTRIBUTES[typeID] || {}) };
+    },
+    isEffectivelyOnlineModule: () => true,
+    getControllerDogmaContext: () => ({
+      skillMap,
+      fittedItems,
+      fingerprint: options.fingerprint || "fingerprint-a",
+    }),
+    getActiveImplants: () => options.implants || [],
+    getActiveBoosters: () => [],
+  };
+
+  return {
+    scene, deps, calls, shipEntity, drones, rocks, session, miningState, containerItems, shipItem,
+  };
+}
+
+test("control range adds skill, module and implant bonuses onto the 20 km base", () => {
+  const world = makeWorld({ implants: [{ typeID: LINK_AUGMENTOR_TYPE }] });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  const range = runtime.controlRange.resolve(world.shipEntity, 7);
+  assert.equal(range.rangeMeters, 120000 + 20000);
+  assert.equal(range.breakdown.base, 20000);
+  assert.equal(range.breakdown.skills, 40000);
+  assert.equal(range.breakdown.modules, 60000);
+  assert.equal(range.breakdown.implants, 20000);
+
+  // The reference hull: a Rorqual at all-V with three Drone Link Augmentors and
+  // no implant resolves to the 120 km the client shows.
+  const bare = makeWorld();
+  const bareRange = createRuntime({ config: makeConfig(), deps: bare.deps })
+    .controlRange.resolve(bare.shipEntity, 7);
+  assert.equal(bareRange.rangeMeters, 120000);
+});
+
+test("a rock that spawned after the scene cache was built is mined, once rebuilt", () => {
+  const staleRock = makeRock(3009, "ore", 1230, 9000);
+  const world = makeWorld({
+    rocks: [],
+    staleRock,
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.miningState.rebuilds, 1, "the stale cache must be rebuilt exactly once");
+  assert.deepEqual(world.calls.mine.map((call) => call.targetID), [3009]);
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.miningState.rebuilds, 1, "a rebuilt cache must not be rebuilt again");
+});
+
+test("a permanently unknown mineable entity costs one rebuild, not one per scan", () => {
+  const world = makeWorld({
+    rocks: [],
+    unknownMineableEntities: [
+      { itemID: 3010, typeID: 1230, categoryID: 25, position: { x: 5000, y: 0, z: 0 }, radius: 0 },
+    ],
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  runtime.onSceneTick(world.scene, 2000);
+  runtime.onSceneTick(world.scene, 3000);
+  assert.equal(world.miningState.rebuilds, 1);
+  assert.equal(world.calls.mine.length, 0);
+});
+
+test("the stale-cache rebuild can be switched off", () => {
+  const world = makeWorld({
+    rocks: [],
+    staleRock: makeRock(3009, "ore", 1230, 9000),
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ refreshStaleSceneCache: false }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.miningState.rebuilds, 0);
+  assert.equal(world.calls.mine.length, 0);
+});
+
+test("fixed range mode ignores ship attributes", () => {
+  const world = makeWorld();
+  const runtime = createRuntime({
+    config: makeConfig({ rangeMode: "fixed", rangeMeters: 25000 }),
+    deps: world.deps,
+  });
+  const range = runtime.controlRange.resolve(world.shipEntity, 7);
+  assert.equal(range.rangeMeters, 25000);
+  assert.equal(range.breakdown.mode, "fixed");
+});
+
+test("idle mining drones are auto-assigned inside the control range only", () => {
+  const world = makeWorld();
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 2);
+  const byDrone = new Map(world.calls.mine.map((call) => [call.droneIDs[0], call.targetID]));
+  assert.equal(byDrone.get(2001), 3001);
+  assert.equal(byDrone.get(2002), 3003);
+  assert.equal(byDrone.has(2003), false);
+});
+
+test("a drone already ordered to mine is left alone", () => {
+  const world = makeWorld({
+    drones: [
+      makeDrone({
+        itemID: 2001,
+        typeID: ORE_DRONE_TYPE,
+        controllerID: 1000,
+        droneCommand: "MINE",
+        activityState: 2,
+      }),
+    ],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 0);
+});
+
+test("spread mode claims a second rock, focus mode stacks on the first", () => {
+  const drones = [
+    makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+    makeDrone({ itemID: 2002, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+  ];
+  const rocks = [
+    makeRock(3001, "ore", 1230, 10000),
+    makeRock(3002, "ore", 1230, 11000),
+  ];
+  const spread = makeWorld({ drones, rocks });
+  const spreadRuntime = createRuntime({
+    config: makeConfig({ targetMode: "spread", claimPenaltyMeters: 15000 }),
+    deps: spread.deps,
+  });
+  spreadRuntime.onSceneTick(spread.scene, 1000);
+  assert.deepEqual(
+    spread.calls.mine.map((call) => call.targetID).sort(),
+    [3001, 3002],
+  );
+
+  const focus = makeWorld({ drones, rocks });
+  const focusRuntime = createRuntime({
+    config: makeConfig({ targetMode: "focus" }),
+    deps: focus.deps,
+  });
+  focusRuntime.onSceneTick(focus.scene, 1000);
+  assert.deepEqual(focus.calls.mine.map((call) => call.targetID), [3001, 3001]);
+});
+
+test("a full mining hold recalls the drones instead of assigning them", () => {
+  const world = makeWorld({
+    oreHoldCapacity: 1000,
+    cargoCapacity: 0,
+    containerItems: [{ flagID: ORE_HOLD_FLAG, volume: 1000, quantity: 1 }],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 0);
+  assert.equal(world.calls.returnBay.length, 1);
+  assert.deepEqual(world.calls.returnBay[0].droneIDs.sort(), [2001, 2002]);
+});
+
+test("a full ore hold spills into the general mining hold before recalling", () => {
+  const world = makeWorld({
+    oreHoldCapacity: 1000,
+    generalMiningHoldCapacity: 5000,
+    containerItems: [{ flagID: ORE_HOLD_FLAG, volume: 1000, quantity: 1 }],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.returnBay.length, 0);
+  assert.equal(world.calls.mine.length, 2);
+});
+
+test("a drone that takes damage is recalled", () => {
+  const drones = [
+    makeDrone({
+      itemID: 2001,
+      typeID: ORE_DRONE_TYPE,
+      controllerID: 1000,
+      shieldCapacity: 100,
+      conditionState: { shieldCharge: 1 },
+    }),
+  ];
+  const world = makeWorld({ drones });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 1);
+  drones[0].conditionState = { shieldCharge: 0.4 };
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.calls.returnBay.length, 1);
+  assert.deepEqual(world.calls.returnBay[0].droneIDs, [2001]);
+});
+
+test("recalled drones are not re-tasked while they fly home", () => {
+  const drones = [
+    makeDrone({
+      itemID: 2001,
+      typeID: ORE_DRONE_TYPE,
+      controllerID: 1000,
+      shieldCapacity: 100,
+      conditionState: { shieldCharge: 1 },
+    }),
+  ];
+  const world = makeWorld({ drones });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  drones[0].conditionState = { shieldCharge: 0.5 };
+  runtime.onSceneTick(world.scene, 2000);
+  const minesBefore = world.calls.mine.length;
+  runtime.onSceneTick(world.scene, 3000);
+  runtime.onSceneTick(world.scene, 4000);
+  assert.equal(world.calls.mine.length, minesBefore);
+});
+
+test("scan interval throttles the scene pass", () => {
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ scanIntervalMs: 500 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  runtime.onSceneTick(world.scene, 1100);
+  assert.equal(world.calls.mine.length, 1);
+  runtime.onSceneTick(world.scene, 1600);
+  assert.equal(world.calls.mine.length, 2);
+});
+
+test("a player can switch automation off", () => {
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerEnabled(7, false);
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 0);
+});
+
+test("the chat overlay answers on /altmining and toggles the player state", () => {
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const sent = [];
+  const upstream = {
+    AVAILABLE_SLASH_COMMANDS: [],
+    COMMANDS_HELP_TEXT: "Commands:",
+    executeChatCommand: () => ({ handled: false }),
+  };
+  chatCommand.install(upstream, { runtime, config });
+  assert.ok(upstream.AVAILABLE_SLASH_COMMANDS.includes("atm"));
+  assert.ok(upstream.AVAILABLE_SLASH_COMMANDS.includes("altmining"));
+  assert.ok(!upstream.AVAILABLE_SLASH_COMMANDS.includes("alternateminingdrones"),
+    "the long spelling is gone");
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/atm"));
+  const chatHub = {
+    sendSystemMessage: (session, message) => sent.push(message),
+  };
+  const off = upstream.executeChatCommand(world.session, "/altmining off", chatHub, {});
+  assert.equal(off.handled, true);
+  assert.equal(sent.length, 1);
+  assert.equal(runtime.playerStateSnapshot(7).enabled, false);
+  const untouched = upstream.executeChatCommand(world.session, "/help", chatHub, {});
+  assert.deepEqual(untouched, { handled: false });
+  const status = upstream.executeChatCommand(world.session, "/altmining status", chatHub, {});
+  assert.match(status.message, /AlternateMiningDrones v/);
+});
+
+test("the chat overlay answers on the dot prefix used by non-staff clients", () => {
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const upstream = {
+    AVAILABLE_SLASH_COMMANDS: [],
+    COMMANDS_HELP_TEXT: "Commands:",
+    executeChatCommand: () => ({ handled: false }),
+  };
+  chatCommand.install(upstream, { runtime, config });
+
+  // Chat bodies reach the server through the XMPP handler with chatHub=null
+  // and emitChatFeedback=false; the returned message is what gets pushed back
+  // to the player, so it has to survive this path.
+  const viaChatBody = upstream.executeChatCommand(
+    world.session,
+    ".altmining range",
+    null,
+    { emitChatFeedback: false },
+  );
+  assert.equal(viaChatBody.handled, true);
+  assert.match(viaChatBody.message, /search radius/);
+
+  const sent = [];
+  const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
+  const on = upstream.executeChatCommand(world.session, ".altmining on", chatHub, {});
+  assert.equal(on.handled, true);
+  assert.equal(sent.length, 1);
+  assert.equal(runtime.playerStateSnapshot(7).enabled, true);
+
+  const other = upstream.executeChatCommand(world.session, ".help", chatHub, {});
+  assert.deepEqual(other, { handled: false });
+});
+
+test("configuration parsing validates ranges and modes", () => {
+  const config = configModule.load(path.join(__dirname, ".."), {
+    EVEJS_ALT_MINING_DRONES_RANGE_MODE: "fixed",
+    EVEJS_ALT_MINING_DRONES_RANGE_METERS: "45000",
+    EVEJS_ALT_MINING_DRONES_TARGET_MODE: "focus",
+    EVEJS_ALT_MINING_DRONES_SCAN_INTERVAL_MS: "250",
+  });
+  assert.equal(config.rangeMode, "fixed");
+  assert.equal(config.rangeMeters, 45000);
+  assert.equal(config.targetMode, "focus");
+  assert.equal(config.scanIntervalMs, 250);
+  assert.deepEqual(config.problems, []);
+
+  const broken = configModule.load(path.join(__dirname, ".."), {
+    EVEJS_ALT_MINING_DRONES_RANGE_MODE: "fixed",
+    EVEJS_ALT_MINING_DRONES_TARGET_MODE: "sideways",
+    EVEJS_ALT_MINING_DRONES_SCAN_INTERVAL_MS: "10",
+  });
+  assert.equal(broken.problems.length, 3);
+});
+
+test("the loader wraps tickScene through Module._load and overrides chat", () => {
+  const Module = require("node:module");
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alternateMiningDrones-"));
+  const write = (relative, body) => {
+    const target = path.join(root, ...relative.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, body, "utf8");
+    return target;
+  };
+  const droneRuntimePath = write(
+    "server/src/services/drone/droneRuntime.js",
+    [
+      "\"use strict\";",
+      "const calls = [];",
+      "module.exports = {",
+      "  calls,",
+      "  tickScene(scene, now) { calls.push({ scene, now }); return \"tick-result\"; },",
+      "  launchDronesForSession(session) { calls.push({ launch: session }); return { ok: true }; },",
+      "  commandMineRepeatedly(session, droneIDs, targetID) {",
+      "    calls.push({ mine: droneIDs, targetID }); return { ok: true };",
+      "  },",
+      "  commandReturnBay(session, droneIDs) { calls.push({ returnBay: droneIDs }); return { ok: true }; },",
+      "  buildDroneStateNotificationTuple(entity) {",
+      "    return [entity.itemID, 7, entity.controllerID, entity.activityState, entity.typeID, 7, null];",
+      "  },",
+      "  normalizeDroneIDList(ids) { return Array.isArray(ids) ? ids : []; },",
+      "  _testing: {",
+      "    canPlayerCompanionActOnTarget: () => true,",
+      "    resolveRuntimeSceneForSession: (_space, session) => session._scene || null,",
+      "  },",
+      "};",
+      "",
+    ].join("\n"),
+  );
+  const chatCommandsPath = write(
+    "server/src/services/chat/chatCommands.js",
+    [
+      "\"use strict\";",
+      "const AVAILABLE_SLASH_COMMANDS = [\"help\"];",
+      "const COMMANDS_HELP_TEXT = [\"Commands:\", \"/help\"].join(\"\\n\");",
+      "function executeChatCommand() { return { handled: false }; }",
+      "module.exports = { AVAILABLE_SLASH_COMMANDS, COMMANDS_HELP_TEXT, executeChatCommand };",
+      "",
+    ].join("\n"),
+  );
+
+  const chatRuntimePath = write(
+    "server/src/_secondary/chat/chatRuntime.js",
+    [
+      "\"use strict\";",
+      "const calls = [];",
+      "module.exports = {",
+      "  calls,",
+      "  broadcastLocalMessage(session, message) {",
+      "    calls.push(message);",
+      "    return { entry: { message, createdAtMs: 1 } };",
+      "  },",
+      "  sendChannelMessage(session, roomName, message) {",
+      "    calls.push(roomName + \":\" + message);",
+      "    return { entry: { message, createdAtMs: 1 } };",
+      "  },",
+      "};",
+      "",
+    ].join("\n"),
+  );
+
+  write(
+    "config/alternateMiningDrones.json",
+    JSON.stringify({ postLaunchDelayMs: 0 }, null, 2),
+  );
+
+  const world = makeWorld();
+  const notifications = [];
+  world.session.sendNotification = (...args) => notifications.push(args);
+  world.session._scene = world.scene;
+  const previousInstallFlag = globalThis[loaderModule.INSTALL_FLAG];
+  const previousApi = globalThis[loaderModule.API_SYMBOL];
+  delete globalThis[loaderModule.INSTALL_FLAG];
+  delete globalThis[loaderModule.API_SYMBOL];
+  // The mod talks to the same module object the client's RPCs reach, so the
+  // re-entrancy guard has to survive a real round trip through the wrapper.
+  const state = loaderModule.install({
+    runtimeRoot: root,
+    deps: { ...world.deps, getDroneRuntime: () => require(droneRuntimePath) },
+    environment: {},
+  });
+  try {
+    assert.equal(state.active, true);
+    const droneRuntime = require(droneRuntimePath);
+    assert.equal(droneRuntime.tickScene(world.scene, 4242), "tick-result");
+    assert.equal(
+      droneRuntime.calls.filter((entry) => entry.scene).length,
+      1,
+      "the vendor tick must still run",
+    );
+    assert.equal(
+      droneRuntime.calls.filter((entry) => entry.mine).length,
+      2,
+      "the wrapped tick must auto-assign idle drones",
+    );
+    droneRuntime.tickScene(world.scene, 5242);
+    assert.ok(
+      notifications.some(([name]) => name === "OnDroneStateChange"),
+      "the wrapped tick must replay the drone state so the client cannot go stale",
+    );
+
+    // A player order parks the drone; the mod's own order must not.
+    const drone1 = world.scene.dynamicEntities.get(2001);
+    const drone2 = world.scene.dynamicEntities.get(2002);
+    droneRuntime.commandReturnBay(world.session, [2001]);
+    assert.ok(
+      drone1.altMiningDronesPlayerParkedAtMs > 0,
+      "a manual order must be seen as a takeover",
+    );
+    drone2.altMiningDronesPlayerParkedAtMs = 0;
+    commandScope.run(() => droneRuntime.commandReturnBay(world.session, [2002]));
+    assert.equal(
+      drone2.altMiningDronesPlayerParkedAtMs,
+      0,
+      "the mod's own recall must not look like a takeover",
+    );
+
+    // Launching again hands the drone back to the automation.
+    droneRuntime.launchDronesForSession(world.session, []);
+    assert.equal(drone1.altMiningDronesPlayerParkedAtMs, 0);
+    assert.ok(droneRuntime.calls.some((entry) => entry.launch));
+
+    const chatCommands = require(chatCommandsPath);
+    assert.ok(chatCommands.AVAILABLE_SLASH_COMMANDS.includes("altmining"));
+    assert.ok(!chatCommands.AVAILABLE_SLASH_COMMANDS.includes("alternateminingdrones"),
+      "the long spelling is gone");
+    const sent = [];
+    const result = chatCommands.executeChatCommand(
+      world.session,
+      "/altmining focus",
+      { sendSystemMessage: (session, message) => sent.push(message) },
+      {},
+    );
+    assert.equal(result.handled, true);
+    assert.equal(sent.length, 1);
+
+    // The ordinary-chat path: a line without a leading "/" is broadcast by
+    // xmppStubServer rather than dispatched as a slash command, so the trigger
+    // is consumed on the broadcaster and the reply travels back as the thrown
+    // error's message.
+    const chatRuntime = require(chatRuntimePath);
+    assert.throws(
+      () => chatRuntime.broadcastLocalMessage(world.session, "!altmining spread"),
+      (error) => /^AlternateMiningDrones/.test(error.message),
+    );
+    assert.equal(chatRuntime.calls.length, 0, "the trigger must never be broadcast");
+    chatRuntime.broadcastLocalMessage(world.session, "hello belt");
+    assert.deepStrictEqual(chatRuntime.calls, ["hello belt"]);
+    assert.deepStrictEqual(
+      state.api.applied().sort(),
+      ["chatCommands", "chatRuntime", "droneRuntime"],
+    );
+  } finally {
+    Module._load = state.previousLoad;
+    delete globalThis[loaderModule.INSTALL_FLAG];
+    delete globalThis[loaderModule.API_SYMBOL];
+    if (previousInstallFlag !== undefined) globalThis[loaderModule.INSTALL_FLAG] = previousInstallFlag;
+    if (previousApi !== undefined) globalThis[loaderModule.API_SYMBOL] = previousApi;
+    delete require.cache[require.resolve(droneRuntimePath)];
+    delete require.cache[require.resolve(chatCommandsPath)];
+    delete require.cache[require.resolve(chatRuntimePath)];
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the loader installs the tick hook only once", () => {
+  const world = makeWorld();
+  const store = makePlayersFile("loader-once");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  delete globalThis[loaderModule.INSTALL_FLAG];
+  delete globalThis[loaderModule.API_SYMBOL];
+  const options = { runtimeRoot: modDir, deps: world.deps, environment: {}, players };
+  const first = loaderModule.install(options);
+  const second = loaderModule.install(options);
+  try {
+    assert.equal(first, second, "a second install must return the first one unchanged");
+  } finally {
+    require("node:module")._load = first.previousLoad;
+    delete globalThis[loaderModule.INSTALL_FLAG];
+    delete globalThis[loaderModule.API_SYMBOL];
+    fs.rmSync(store.dir, { recursive: true, force: true });
+  }
+});
+
+test("an invalid configuration leaves the loader inert", () => {
+  delete globalThis[loaderModule.INSTALL_FLAG];
+  const state = loaderModule.install({
+    runtimeRoot: modDir,
+    environment: { EVEJS_ALT_MINING_DRONES_RANGE_MODE: "sideways" },
+  });
+  assert.equal(state.active, false);
+  assert.equal(state.reason, "invalid-config");
+  assert.equal(globalThis[loaderModule.INSTALL_FLAG], undefined);
+});
+
+test("a short key in the JSON config reaches the same setting as the long one", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-config-"));
+  const configPath = path.join(dir, "alternateMiningDrones.json");
+  fs.writeFileSync(configPath, JSON.stringify({
+    verbose: true,
+    targetMode: "focus",
+    minHoldFreeVolumeM3: 1,
+    scanIntervalMs: 900,
+  }), "utf8");
+  const short = configModule.load(modDir, {}, { runtimeRoot: dir, configPath });
+  assert.equal(short.verbose, true);
+  assert.equal(short.targetMode, "focus");
+  assert.equal(short.minHoldFreeVolumeM3, 1);
+  assert.equal(short.scanIntervalMs, 900);
+  assert.deepEqual(short.problems, []);
+  assert.ok(short.playersFilename.endsWith("alternateMiningDrones.players.json"));
+
+  fs.writeFileSync(configPath, JSON.stringify({
+    EVEJS_ALT_MINING_DRONES_VERBOSE: "false",
+    EVEJS_ALT_MINING_DRONES_TARGET_MODE: "spread",
+  }), "utf8");
+  const long = configModule.load(modDir, {}, { runtimeRoot: dir, configPath });
+  assert.equal(long.verbose, false);
+  assert.equal(long.targetMode, "spread");
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("a character's choices are persisted and override the server defaults", () => {
+  const store = makePlayersFile("players");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps, players });
+  runtime.setPlayerTargetMode(7, "focus");
+  runtime.setPlayerMinHoldFreeVolume(7, 1);
+  runtime.setPlayerControlPolicy(7, "recall");
+  const mine = runtime.getPlayerState(7);
+  assert.equal(mine.targetMode, "focus");
+  assert.equal(mine.minHoldFreeVolumeM3, 1);
+  assert.equal(mine.playerControlPolicy, "recall");
+  assert.equal(mine.source, "player");
+
+  const reopened = playerSettings.createPlayerStore({ file: store.file });
+  const restarted = createRuntime({ config: makeConfig(), deps: world.deps, players: reopened });
+  assert.equal(restarted.getPlayerState(7).minHoldFreeVolumeM3, 1);
+  const untouched = restarted.getPlayerState(8);
+  assert.equal(untouched.source, "config");
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+
+test("the hull's own mining bay decides when the drones come home", () => {
+  const occupied = [{ flagID: ORE_HOLD_FLAG, volume: 1000, quantity: 1 }];
+  const mining = makeWorld({
+    oreHoldCapacity: 1000,
+    cargoCapacity: 500,
+    containerItems: occupied,
+  });
+  const miningRuntime = createRuntime({ config: makeConfig(), deps: mining.deps });
+  miningRuntime.onSceneTick(mining.scene, 1000);
+  assert.equal(mining.calls.mine.length, 0, "a full mining bay must not be mined into");
+  assert.equal(mining.calls.returnBay.length, 1);
+});
+
+test("room in the ordinary cargo hold never keeps a mining hull working", () => {
+  // The ore bay is down to its last sliver, so the server - which takes the
+  // first bay with any room at all and then abandons a cycle it cannot fit a
+  // whole unit into - never reaches the cargo hold behind it. Even with the
+  // margin switched off the drones must come home instead of mining into a bay
+  // that cannot take the yield.
+  const world = makeWorld({
+    oreHoldCapacity: 100,
+    cargoCapacity: 500,
+    containerItems: [{ flagID: ORE_HOLD_FLAG, volume: 99.95, quantity: 1 }],
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ minHoldFreeVolumeM3: 0 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 0);
+  assert.equal(world.calls.returnBay.length, 1);
+  const status = runtime.describeStatus(world.session);
+  assert.equal(status.stats.lastRecallReason, "no room for a whole unit");
+  assert.deepEqual(status.hold.bays.map((bay) => bay.flagID), [ORE_HOLD_FLAG]);
+});
+
+test("a hull without a mining bay is judged on its cargo hold", () => {
+  const emptyCargo = makeWorld({
+    oreHoldCapacity: 0,
+    cargoCapacity: 500,
+    containerItems: [{ flagID: CARGO_HOLD_FLAG, volume: 100, quantity: 1 }],
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const working = createRuntime({ config: makeConfig(), deps: emptyCargo.deps });
+  working.onSceneTick(emptyCargo.scene, 1000);
+  assert.equal(emptyCargo.calls.mine.length, 1);
+  assert.equal(emptyCargo.calls.returnBay.length, 0);
+
+  const fullCargo = makeWorld({
+    oreHoldCapacity: 0,
+    cargoCapacity: 500,
+    containerItems: [{ flagID: CARGO_HOLD_FLAG, volume: 500, quantity: 1 }],
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const stopped = createRuntime({ config: makeConfig(), deps: fullCargo.deps });
+  stopped.onSceneTick(fullCargo.scene, 1000);
+  assert.equal(fullCargo.calls.mine.length, 0);
+  assert.equal(fullCargo.calls.returnBay.length, 1);
+});
+
+test("a bay that is nearly full stops the drones at the configured threshold", () => {
+  const nearlyFull = [{ flagID: ORE_HOLD_FLAG, volume: 99.5, quantity: 1 }];
+  const world = makeWorld({
+    oreHoldCapacity: 100,
+    cargoCapacity: 0,
+    containerItems: nearlyFull,
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 0);
+  assert.equal(world.calls.returnBay.length, 1);
+  assert.equal(runtime.describeStatus(world.session).stats.lastRecallReason, "hold nearly full");
+
+  const tight = makeWorld({
+    oreHoldCapacity: 100,
+    cargoCapacity: 0,
+    containerItems: [{ flagID: ORE_HOLD_FLAG, volume: 99.5, quantity: 1 }],
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const store = makePlayersFile("threshold");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  players.set(7, { minHoldFreeVolumeM3: 0.2 });
+  const tightRuntime = createRuntime({ config: makeConfig(), deps: tight.deps, players });
+  tightRuntime.onSceneTick(tight.scene, 1000);
+  assert.equal(tight.calls.returnBay.length, 0, "a smaller threshold keeps the drones working");
+  assert.equal(tight.calls.mine.length, 1);
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+
+test("an order that puts nothing in the bay parks the drone instead of looping", () => {
+  const items = [{ flagID: ORE_HOLD_FLAG, volume: 0, quantity: 1 }];
+  const world = makeWorld({
+    oreHoldCapacity: 1000,
+    cargoCapacity: 0,
+    containerItems: items,
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ maxStalledReassignments: 2 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 1);
+  runtime.onSceneTick(world.scene, 17000);
+  assert.equal(world.calls.mine.length, 2, "the probe window has to expire before it counts");
+  runtime.onSceneTick(world.scene, 33000);
+  assert.equal(world.calls.mine.length, 2, "a fruitless drone is not ordered again");
+  assert.equal(world.calls.returnBay.length, 1);
+  assert.equal(runtime.describeStatus(world.session).stats.stalls, 1);
+});
+
+test("an order that does deliver ore clears the stall counter", () => {
+  const items = [{ flagID: ORE_HOLD_FLAG, volume: 0, quantity: 1 }];
+  const world = makeWorld({
+    oreHoldCapacity: 1000,
+    cargoCapacity: 0,
+    containerItems: items,
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ maxStalledReassignments: 2 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  items[0].volume = 5;
+  runtime.onSceneTick(world.scene, 17000);
+  runtime.onSceneTick(world.scene, 33000);
+  assert.equal(world.calls.mine.length, 3, "delivered ore keeps the drone working");
+  assert.equal(world.calls.returnBay.length, 0);
+  assert.equal(runtime.describeStatus(world.session).stats.stalls, 0);
+});
+
+test("a manual order parks the drones until they are launched again", () => {
+  const world = makeWorld({
+    drones: [
+      makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+      makeDrone({ itemID: 2002, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+    ],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 2);
+  world.calls.mine.length = 0;
+  assert.equal(runtime._testing.notePlayerCommand("returnHome", world.session, [2001]), 1);
+  runtime.onSceneTick(world.scene, 2000);
+  assert.deepEqual(world.calls.mine.map((call) => call.droneIDs[0]), [2002]);
+  assert.equal(runtime.resumeDrones(world.session), 1);
+  world.calls.mine.length = 0;
+  runtime.onSceneTick(world.scene, 3000);
+  assert.deepEqual(world.calls.mine.map((call) => call.droneIDs[0]), [2001, 2002]);
+});
+
+test("the player-control policy decides which manual orders park a drone", () => {
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const store = makePlayersFile("control");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  players.set(7, { playerControlPolicy: "recall" });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps, players });
+  assert.equal(
+    runtime._testing.notePlayerCommand("commandMineRepeatedly", world.session, [2001]),
+    0,
+    "an ordinary order is not a takeover under the recall policy",
+  );
+  assert.equal(runtime._testing.notePlayerCommand("returnBay", world.session, [2001]), 1);
+  world.scene.dynamicEntities.get(2001).altMiningDronesPlayerParkedAtMs = 0;
+  players.set(7, { playerControlPolicy: "off" });
+  assert.equal(runtime._testing.notePlayerCommand("returnHome", world.session, [2001]), 0);
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+
+test("a launched drone's state is replayed until it reports mining", () => {
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const sent = [];
+  world.session.sendNotification = (...args) => sent.push(args);
+  const runtime = createRuntime({
+    config: makeConfig({ stateRefreshScheduleMs: [0, 1000] }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 1);
+  assert.equal(sent.length, 0, "the schedule starts with the order, not before it");
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], "OnDroneStateChange");
+  assert.equal(sent[0][2][0], 2001);
+  world.drones[0].activityState = 2;
+  world.drones[0].droneCommand = "MINE";
+  runtime.onSceneTick(world.scene, 3000);
+  assert.equal(sent.length, 1, "once the server reports mining the replay stops");
+});
+
+test("a plain chat line drives the mod so a character without staff rights can use it", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const broadcast = [];
+  const upstream = {
+    broadcastLocalMessage(session, message) {
+      broadcast.push(message);
+      return { entry: { message } };
+    },
+    sendChannelMessage(session, roomName, message) {
+      broadcast.push(roomName + ":" + message);
+      return { entry: { message } };
+    },
+  };
+  plainChat.install(upstream, { runtime, config, chatCommand });
+
+  // The reply is the thrown error: xmppStubServer catches it and sends
+  // error.message back to the sender alone, so the line never reaches anybody
+  // else. Throwing is the reply, not a failure.
+  assert.throws(
+    () => upstream.broadcastLocalMessage(world.session, "!altmining focus"),
+    (error) => /^AlternateMiningDrones/.test(error.message),
+  );
+  assert.equal(broadcast.length, 0, "the trigger must never be broadcast");
+  assert.equal(runtime.getPlayerState(7).targetMode, "focus");
+
+  // "!amd" is not this mod's spelling any more: the abbreviation is claimed by
+  // other mods on a shared server, so the line has to reach the channel intact
+  // instead of being swallowed here.
+  upstream.sendChannelMessage(world.session, "corp.1", "!amd on");
+  assert.deepStrictEqual(broadcast, ["corp.1:!amd on"], "!amd is ordinary chat now");
+
+  // Somebody else's line is passed straight through, in either channel.
+  upstream.broadcastLocalMessage(world.session, "!hello there");
+  upstream.sendChannelMessage(world.session, "corp.1", "hello corp");
+  assert.deepStrictEqual(broadcast, ["corp.1:!amd on", "!hello there", "corp.1:hello corp"]);
+});
+
+test("the plain-chat trigger only answers its own name, and only when it is enabled", () => {
+  const config = makeConfig();
+  assert.equal(chatCommand.matchTrigger("!altmining", config), "");
+  assert.equal(chatCommand.matchTrigger("!amd   spread", config), null,
+    "the amd abbreviation is not this mod's spelling any more");
+  assert.equal(chatCommand.matchTrigger("!/altmining status", config), null);
+  assert.equal(chatCommand.matchTrigger("!hello there", config), null);
+  // A slash or dot line is the slash.SlashCmd path, and must not be consumed twice.
+  assert.equal(chatCommand.matchTrigger("/altmining status", config), null);
+  assert.equal(chatCommand.matchTrigger(".altmining status", config), null);
+  assert.equal(
+    chatCommand.matchTrigger("!altmining on", makeConfig({ chatTrigger: false })),
+    null,
+  );
+});
+
+test("the plain-chat trigger is inert when it is switched off", () => {
+  const world = makeWorld();
+  const config = makeConfig({ chatTrigger: false });
+  const runtime = createRuntime({ config, deps: world.deps });
+  const broadcast = [];
+  const upstream = {
+    broadcastLocalMessage(session, message) {
+      broadcast.push(message);
+      return { entry: { message } };
+    },
+  };
+  plainChat.install(upstream, { runtime, config, chatCommand });
+  upstream.broadcastLocalMessage(world.session, "!altmining focus");
+  assert.deepStrictEqual(broadcast, ["!altmining focus"]);
+  assert.equal(runtime.getPlayerState(7).targetMode, config.targetMode);
+});
+
+test("the chat overlay covers threshold, control and resume", () => {
+  const world = makeWorld();
+  const store = makePlayersFile("chat");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps, players });
+  const upstream = { executeChatCommand: () => ({ handled: false }) };
+  chatCommand.install(upstream, { runtime, config });
+  const sent = [];
+  const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
+
+  const removed = upstream.executeChatCommand(world.session, "/altmining hold all", chatHub, {});
+  assert.match(removed.message, /unknown option "hold"/);
+  upstream.executeChatCommand(world.session, "/altmining threshold 4", chatHub, {});
+  upstream.executeChatCommand(world.session, "/altmining control recall", chatHub, {});
+  const state = runtime.getPlayerState(7);
+  assert.equal(state.minHoldFreeVolumeM3, 4);
+  assert.equal(state.playerControlPolicy, "recall");
+  assert.equal(state.holdStopMode, undefined);
+
+  const status = upstream.executeChatCommand(world.session, "/altmining status", chatHub, {});
+  assert.match(status.message, /threshold\s*: 4 m3/);
+  assert.match(status.message, /takeover\s*: recall/);
+
+  upstream.executeChatCommand(world.session, "/altmining resume", chatHub, {});
+  const reset = upstream.executeChatCommand(world.session, "/altmining reset", chatHub, {});
+  assert.equal(reset.handled, true);
+  assert.equal(runtime.getPlayerState(7).source, "config");
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+
+// ---------------------------------------------------------------------------
+// What to mine: the ore/ice/moon filter
+// ---------------------------------------------------------------------------
+
+function oreRocks() {
+  return [
+    makeRock(3001, "ore", 1230, 9000),
+    makeRock(3002, "ore", 1230, 30000),
+    makeRock(3003, "ice", ICE_YIELD_TYPE, 8000, 1),
+  ];
+}
+
+function oneOreDroneWorld(rocks) {
+  return makeWorld({
+    rocks,
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+}
+
+test("filter: the named ore wins even when another one is closer", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 9000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 20000),
+  ];
+  const plainWorld = oneOreDroneWorld(rocks.map((rock) => ({ ...rock })));
+  const plain = createRuntime({ config: makeConfig(), deps: plainWorld.deps });
+  plain.onSceneTick(plainWorld.scene, 1000);
+  assert.deepEqual(
+    plainWorld.calls.mine.map((call) => call.targetID),
+    [3001],
+    "with no filter the closest rock is the one mined",
+  );
+
+  const world = oneOreDroneWorld(rocks.map((rock) => ({ ...rock })));
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerOreFilter(7, { ore: ["pyroxeres"] });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.mine.map((call) => call.targetID), [3002]);
+});
+
+test("filter: a name matches every variant of that ore", () => {
+  const rocks = [
+    makeRock(3001, "ore", DENSE_VELDSPAR_TYPE, 9000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 12000),
+  ];
+  const world = oneOreDroneWorld(rocks);
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar"] });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(
+    world.calls.mine.map((call) => call.targetID),
+    [3001],
+    "Dense Veldspar has to be reached by the name veldspar",
+  );
+});
+
+test("filter: moon ore is its own bucket, never reached with an ore filter", () => {
+  const moonRock = makeRock(3005, "ore", MOON_ORE_TYPE, 9000);
+  moonRock.entity.generatedMoonOreChunk = true;
+  const rocks = () => [makeRock(3001, "ore", 1230, 12000), moonRock];
+
+  const moonWorld = oneOreDroneWorld(rocks());
+  const moon = createRuntime({ config: makeConfig(), deps: moonWorld.deps });
+  moon.setPlayerOreFilter(7, { moon: ["bitumens"] });
+  moon.onSceneTick(moonWorld.scene, 1000);
+  assert.deepEqual(moonWorld.calls.mine.map((call) => call.targetID), [3005]);
+
+  // "ore" alone must not touch the moon rock, even though it is closer.
+  const oreWorld = oneOreDroneWorld(rocks());
+  const ore = createRuntime({ config: makeConfig(), deps: oreWorld.deps });
+  ore.setPlayerOreFilter(7, { ore: [] });
+  ore.onSceneTick(oreWorld.scene, 1000);
+  assert.deepEqual(oreWorld.calls.mine.map((call) => call.targetID), [3001]);
+
+  // Without the chunk flag the group table still identifies a moon ore.
+  const unflagged = makeRock(3006, "ore", MOON_ORE_TYPE, 9000);
+  const groupWorld = oneOreDroneWorld([makeRock(3001, "ore", 1230, 12000), unflagged]);
+  const group = createRuntime({ config: makeConfig(), deps: groupWorld.deps });
+  group.setPlayerOreFilter(7, { moon: [] });
+  group.onSceneTick(groupWorld.scene, 1000);
+  assert.deepEqual(groupWorld.calls.mine.map((call) => call.targetID), [3006]);
+});
+
+test("filter: an ice drone follows the ice bucket, not the ore one", () => {
+  const world = makeWorld({
+    rocks: oreRocks(),
+    drones: [
+      makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+      makeDrone({ itemID: 2002, typeID: ICE_DRONE_TYPE, controllerID: 1000 }),
+    ],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerOreFilter(7, { ice: [] });
+  runtime.setPlayerFilterFallback(7, "idle");
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.mine.map((call) => call.droneIDs[0]), [2002]);
+  assert.deepEqual(world.calls.mine.map((call) => call.targetID), [3003]);
+});
+
+test("filter: nothing in range matches - any mines on, idle parks the drones", () => {
+  const anyWorld = oneOreDroneWorld(oreRocks());
+  const any = createRuntime({ config: makeConfig(), deps: anyWorld.deps });
+  any.setPlayerOreFilter(7, { ore: ["arkonor"] });
+  any.onSceneTick(anyWorld.scene, 1000);
+  assert.deepEqual(
+    anyWorld.calls.mine.map((call) => call.targetID),
+    [3001],
+    "the default fallback mines the closest rock anyway",
+  );
+
+  const idleWorld = oneOreDroneWorld(oreRocks());
+  const idle = createRuntime({ config: makeConfig(), deps: idleWorld.deps });
+  idle.setPlayerOreFilter(7, { ore: ["arkonor"] });
+  idle.setPlayerFilterFallback(7, "idle");
+  idle.onSceneTick(idleWorld.scene, 1000);
+  assert.equal(idleWorld.calls.mine.length, 0);
+});
+
+test("filter: the scan reaches past the nearest rocks for the ore that was asked for", () => {
+  const rocks = [];
+  for (let index = 0; index < 60; index += 1) {
+    rocks.push(makeRock(4000 + index, "ore", 1230, 1000 + (index * 100)));
+  }
+  rocks.push(makeRock(4999, "ore", PYROXERES_TYPE, 30000));
+
+  const plainWorld = oneOreDroneWorld(rocks.map((rock) => ({ ...rock })));
+  const plain = createRuntime({ config: makeConfig(), deps: plainWorld.deps });
+  plain.onSceneTick(plainWorld.scene, 1000);
+  assert.notEqual(
+    plainWorld.calls.mine[0].targetID,
+    4999,
+    "the plain maxCandidates window does not reach the 61st rock",
+  );
+
+  const world = oneOreDroneWorld(rocks.map((rock) => ({ ...rock })));
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerOreFilter(7, { ore: ["pyroxeres"] });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.mine.map((call) => call.targetID), [4999]);
+});
+
+test("filter: the players file keeps the queue, the validator trims it", () => {
+  const store = makePlayersFile("filter");
+  const world = makeWorld();
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  const runtime = createRuntime({
+    config: makeConfig(),
+    deps: world.deps,
+    players,
+  });
+  runtime.setPlayerOreFilter(7, [" Veldspar ", "veldsPar", "PYROXERES", "moon"]);
+  const saved = JSON.parse(fs.readFileSync(store.file, "utf8"));
+  assert.deepEqual(saved.characters["7"].oreFilter, ["veldspar", "pyroxeres", "moon"]);
+
+  // A file 1.2.2 wrote holds three per-kind buckets; they still mean the queue
+  // they describe, with an empty bucket standing for the whole kind.
+  const legacy = playerSettings.normalizeEntry({
+    oreFilter: { ore: [" Veldspar ", "any"], ice: [], moon: ["Bitumens"], gas: ["nope"] },
+  });
+  assert.deepEqual(
+    legacy.oreFilter,
+    ["ore:veldspar", "ore", "ice", "moon:bitumens"],
+    "the old buckets are read as the queue, and an unknown bucket is dropped",
+  );
+
+  const normalized = playerSettings.normalizeEntry({
+    oreFilter: ["ok", "waytoolongforapatternxxxxxxxxxxxx", "!!!", "ice", "any", "1231"],
+  });
+  assert.deepEqual(
+    normalized.oreFilter,
+    ["ok", "ice", "*", "1231"],
+    "junk and over-long names are dropped; a kind word, \"*\" and a type ID stay",
+  );
+  assert.equal(
+    playerSettings.normalizeEntry({ oreFilter: { ore: ["x".repeat(30)] } }),
+    null,
+    "a filter with nothing valid left is not stored at all",
+  );
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+
+test("filter: a typed entry is a rock name or a type ID, and nothing else", () => {
+  const queue = require(path.join(__dirname, "..", "lib", "oreQueue.js"));
+
+  // What a players file holds keeps the wider grammar an older release wrote: a
+  // kind word, "*" and a "kind:name" pin all still mean exactly what they meant.
+  assert.deepEqual(queue.readQueue(["Veldspar", "ICE", "any", "1231", "ice:glacial mass"]), [
+    { kind: null, pattern: "veldspar" },
+    { kind: "ice", pattern: "*" },
+    { kind: null, pattern: "*" },
+    { kind: null, pattern: "1231" },
+    { kind: "ice", pattern: "glacial mass" },
+  ]);
+  assert.equal(queue.readQueue(["!!!"]), null, "a token that cannot mean anything is not stored");
+  assert.equal(queue.readQueue([]), null);
+
+  const tokens = ["ice:glacial mass", "ice", "1231"];
+  assert.equal(queue.rank(queue.readQueue(tokens), "ice", "Glacial Mass", 16264), 0,
+    "the named rock is mined before the whole kind under it");
+  assert.equal(queue.rank(queue.readQueue(tokens), "ice", "Blue Ice", 16264), 1);
+  assert.equal(queue.rank(queue.readQueue(tokens), "ore", "Veldspar", 1230), -1,
+    "a kind the queue never mentions is not mined");
+  assert.equal(queue.rank(queue.readQueue(["1231"]), "ore", "Dense Veldspar", 1231), 0,
+    "a number is a type ID");
+  assert.equal(queue.rank(queue.readQueue(["*"]), "moon", "Bitumens", 46678), 0);
+
+  // The typed grammar is narrower: a rock's name, or a type ID. "ice" is a word
+  // inside real rock names, so it is a name like any other, and the two spellings
+  // that used to stand for a whole kind are not tokens at all.
+  assert.deepEqual(queue.parseTypedToken("Azure Ice"), { kind: null, pattern: "azure ice" });
+  assert.deepEqual(queue.parseTypedToken("16268"), { kind: null, pattern: "16268" });
+  assert.equal(queue.parseTypedToken("*"), null, "\"*\" can no longer reach a queue");
+  assert.equal(queue.parseTypedToken("ice:glacial"), null, "and neither can the kind pin");
+
+  // One line, sorted into what a filter command may do with each word: "ice" and
+  // "any" name a whole kind of rock and are passed over, the pin is refused
+  // outright because that spelling is gone, and so is rubbish.
+  assert.deepEqual(
+    queue.classifyTypedWords(["Azure Ice", "ice", "16266", "any", "!!!", "ice:glacial"]),
+    {
+      usable: ["azure ice", "16266"],
+      reserved: ["ice", "any"],
+      pinned: ["ice:glacial"],
+      unusable: ["!!!"],
+    },
+  );
+
+  const kinds = (token) => ({
+    veldspar: ["ore"],
+    kernite: ["ore"],
+    "blue ice": ["ice"],
+    "glacial mass": ["ice"],
+    zeolites: ["moon"],
+  }[token] || []);
+
+  // A position is what "move" reads, and only "move": in "add" a number is a type
+  // ID like any other number.
+  assert.deepEqual(
+    queue.parseEdits(["veldspar", "2", "kernite"]).map((edit) => [edit.token, edit.position]),
+    [["veldspar", null], ["2", null], ["kernite", null]],
+    "add takes no positions, so a number of its own stays a type ID",
+  );
+  assert.deepEqual(
+    queue.parseEdits(["veldspar", "2", "kernite"], { positions: true })
+      .map((edit) => [edit.token, edit.position]),
+    [["veldspar", 2], ["kernite", null]],
+    "move reads a number right after a name as that name's place",
+  );
+
+  assert.deepEqual(
+    queue.placeTokens(
+      ["veldspar", "kernite", "blue ice"],
+      queue.parseEdits(["kernite", "1"], { positions: true }),
+      kinds,
+    ).tokens,
+    ["kernite", "veldspar", "blue ice"],
+    "position 1 is the top of that rock's own list",
+  );
+  assert.deepEqual(
+    queue.placeTokens(
+      ["veldspar", "kernite", "blue ice"],
+      queue.parseEdits(["veldspar", "9"], { positions: true }),
+      kinds,
+    ).tokens,
+    ["kernite", "veldspar", "blue ice"],
+    "a position past the end of the list lands at its end",
+  );
+  assert.deepEqual(
+    queue.placeTokens(
+      ["veldspar", "kernite"],
+      queue.parseEdits(["veldspar"], { positions: true }),
+      kinds,
+      { groupEnd: true },
+    ).tokens,
+    ["kernite", "veldspar"],
+    "no position and \"move\" means the end of that rock's own list",
+  );
+  assert.deepEqual(
+    queue.placeTokens(
+      ["veldspar"], queue.parseEdits(["zeolites", "5"], { positions: true }), kinds,
+    ).tokens,
+    ["veldspar", "zeolites"],
+    "the only entry of a list stays where it is, however big the number is",
+  );
+  assert.deepEqual(
+    queue.placeTokens(
+      ["veldspar"],
+      queue.parseEdits(["kernite"], { positions: true }),
+      kinds,
+      { onlyExisting: true },
+    ),
+    { tokens: ["veldspar"], placed: [], skipped: [], missed: ["kernite"], rejected: [], discarded: [] },
+    "move reports a name that is not queued instead of adding it",
+  );
+
+  // One list at a time: the kind of the first name typed picks the list that is
+  // edited, and an entry of another kind is passed over - the one thing the flat
+  // queue could not say for itself.
+  const scoped = queue.placeTokens(
+    ["veldspar", "kernite", "blue ice", "glacial mass"],
+    queue.parseEdits(["glacial mass", "1", "kernite", "1"], { positions: true }),
+    kinds,
+    { groupEnd: true, onlyExisting: true, onlyKind: "ice" },
+  );
+  assert.deepEqual(scoped.tokens, ["veldspar", "kernite", "glacial mass", "blue ice"],
+    "the ice list moved and the ore list did not");
+  assert.deepEqual(scoped.placed, ["glacial mass"]);
+  assert.deepEqual(scoped.discarded, ["kernite"], "the ore entry was passed over, not moved");
+
+  assert.deepEqual(
+    queue.removeMatching(["ore", "veldspar", "ice", "moon:bitumens"], ["ice"], kinds),
+    { tokens: ["ore", "veldspar", "moon:bitumens"], removed: ["ice"], missed: [] },
+    "a kind word drops that whole list - the branch \"filter clear\" reaches for",
+  );
+  assert.deepEqual(
+    queue.removeMatching(["veldspar", "ice:glacial mass"], ["glacial"], kinds).tokens,
+    ["veldspar"],
+    "a name inside a pinned token is found too",
+  );
+  assert.deepEqual(queue.removeMatching(["veldspar", "ice"], ["*"], kinds).tokens, []);
+  assert.deepEqual(queue.removeMatching(["veldspar"], ["kernite"], kinds).missed, ["kernite"]);
+
+  assert.deepEqual(queue.groupByKind(["veldspar", "glacial mass", "kernite"], kinds), {
+    groups: {
+      ore: [{ order: 1, token: "veldspar" }, { order: 2, token: "kernite" }],
+      ice: [{ order: 1, token: "glacial mass" }],
+      moon: [],
+    },
+    unknown: [],
+  }, "the numbers restart in every list");
+  assert.deepEqual(
+    queue.groupByKind(["veldsparx"], () => []).unknown,
+    [{ order: 1, token: "veldsparx" }],
+  );
+  assert.equal(queue.describeToken("ice"), "ice (any ice rock)",
+    "an old token still says what it stands for");
+});
+test("filter: the queue is a priority list, not just a whitelist", () => {
+  const rocks = () => [
+    makeRock(3001, "ore", PYROXERES_TYPE, 9000),
+    makeRock(3002, "ore", 1230, 25000),
+  ];
+
+  const first = oneOreDroneWorld(rocks());
+  const runtime = createRuntime({ config: makeConfig(), deps: first.deps });
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar", "pyroxeres"] });
+  runtime.onSceneTick(first.scene, 1000);
+  assert.deepEqual(
+    first.calls.mine.map((call) => call.targetID),
+    [3002],
+    "the first entry of the queue is mined even though the second one is closer",
+  );
+
+  const second = oneOreDroneWorld(rocks());
+  const other = createRuntime({ config: makeConfig(), deps: second.deps });
+  other.setPlayerOreFilter(7, { ore: ["pyroxeres", "veldspar"] });
+  other.onSceneTick(second.scene, 1000);
+  assert.deepEqual(
+    second.calls.mine.map((call) => call.targetID),
+    [3001],
+    "swap the two entries and the other rock is the one mined",
+  );
+});
+
+test("filter: a queue entry can stand for a whole kind", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 9000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 30000),
+  ];
+  const world = oneOreDroneWorld(rocks);
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerOreFilter(7, { ore: ["pyroxeres", "any"] });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(
+    world.calls.mine.map((call) => call.targetID),
+    [3002],
+    "the named ore is still mined before the catch-all entry",
+  );
+
+  const wildcardFirst = oneOreDroneWorld(rocks.map((rock) => ({ ...rock })));
+  const wildcard = createRuntime({ config: makeConfig(), deps: wildcardFirst.deps });
+  wildcard.setPlayerOreFilter(7, { ore: ["*"] });
+  wildcard.onSceneTick(wildcardFirst.scene, 1000);
+  assert.deepEqual(wildcardFirst.calls.mine.map((call) => call.targetID), [3001]);
+});
+
+// A drone the mod itself is flying: it holds a mining order, so a queue change
+// may re-issue it, exactly like the drone window's own target.
+function makeMiningDroneOnRock(droneID, rockID) {
+  const drone = makeDrone({
+    itemID: droneID,
+    typeID: ORE_DRONE_TYPE,
+    controllerID: 1000,
+    activityState: 2,
+    droneCommand: "MINE",
+  });
+  drone.targetID = rockID;
+  drone.droneMining = { targetID: rockID };
+  return drone;
+}
+
+test("filter: a queue change re-tasks a drone that is already mining", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 25000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 9000),
+  ];
+  const world = makeWorld({ rocks, drones: [makeMiningDroneOnRock(2001, 3002)] });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+
+  // The first pass notes the queue the ship is working with and does nothing:
+  // the drone holds an order of ours already.
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 0);
+
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar"] });
+  runtime.onSceneTick(world.scene, 2000);
+  assert.deepEqual(
+    world.calls.mine.map((call) => call.targetID),
+    [3001],
+    "the drone leaves the rock the new queue does not want, without waiting for it",
+  );
+  assert.equal(runtime.describeStatus(world.session).stats.retargets, 1);
+
+  // Nothing changed since, so the drone is left alone on its new rock.
+  runtime.onSceneTick(world.scene, 3000);
+  assert.equal(world.calls.mine.length, 1);
+});
+
+test("filter: a higher-priority ore moves a drone off a rock that is still wanted", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 25000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 9000),
+  ];
+  const drone = makeMiningDroneOnRock(2001, 3002);
+  const world = makeWorld({ rocks, drones: [drone] });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+
+  // Pyroxeres is still wanted, but behind Veldspar - and the drone is on it.
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar", "pyroxeres"] });
+  runtime.onSceneTick(world.scene, 2000);
+  assert.deepEqual(world.calls.mine.map((call) => call.targetID), [3001]);
+
+  // The vendor moves the drone; the queue did not change, so it is left there.
+  drone.targetID = 3001;
+  drone.droneMining.targetID = 3001;
+  runtime.onSceneTick(world.scene, 3000);
+  // A second change, one the drone already satisfies: nothing is re-issued.
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar"] });
+  runtime.onSceneTick(world.scene, 4000);
+  assert.equal(world.calls.mine.length, 1);
+});
+
+test("filter: a drone already on the top-ranked rock is left alone", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 9000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 25000),
+  ];
+  const world = makeWorld({ rocks, drones: [makeMiningDroneOnRock(2001, 3001)] });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar"] });
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(
+    world.calls.mine.length,
+    0,
+    "no order is re-issued for the rock it is already on",
+  );
+});
+
+test("filter: a queue that blocks the current rock brings the drone home", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 9000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 12000),
+  ];
+  const world = makeWorld({ rocks, drones: [makeMiningDroneOnRock(2001, 3002)] });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+
+  runtime.setPlayerOreFilter(7, { ore: ["arkonor"] });
+  runtime.setPlayerFilterFallback(7, "idle");
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.calls.mine.length, 0);
+  assert.deepEqual(world.calls.returnBay.map((call) => call.droneIDs), [[2001]]);
+  assert.equal(runtime.describeStatus(world.session).stats.lastRecallReason, "queue changed");
+});
+
+test("filter: a hand-ordered drone is not re-targeted by a queue change", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 25000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 9000),
+  ];
+  const drone = makeMiningDroneOnRock(2001, 3002);
+  drone.altMiningDronesPlayerParkedAtMs = 900;
+  const world = makeWorld({ rocks, drones: [drone] });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar"] });
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.calls.mine.length, 0);
+});
+
+test("filter: retargetOnFilterChange off keeps the old behaviour", () => {
+  const rocks = [
+    makeRock(3001, "ore", 1230, 25000),
+    makeRock(3002, "ore", PYROXERES_TYPE, 9000),
+  ];
+  const world = makeWorld({ rocks, drones: [makeMiningDroneOnRock(2001, 3002)] });
+  const runtime = createRuntime({
+    config: makeConfig({ retargetOnFilterChange: false }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+
+  runtime.setPlayerOreFilter(7, { ore: ["veldspar"] });
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.calls.mine.length, 0, "the switch keeps the 1.2.0 behaviour");
+});
+
+test("chat: filter takes add, move, del and clear, and nothing else", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const queue = () => runtime.getPlayerState(7).oreFilter;
+
+  // One command, one queue: the order typed is the order mined, printed per kind
+  // of rock so each list can be read on its own.
+  const added = run("filter add veldspar pyroxeres blue ice");
+  assert.match(added.message, /added veldspar, pyroxeres, blue ice\./);
+  assert.match(added.message, /\n {2}ore {3}: 1\. veldspar, 2\. pyroxeres\n/);
+  assert.match(added.message, /\n {2}ice {3}: 1\. blue ice\n/);
+  assert.match(added.message, /\n {2}moon {2}: nothing$/);
+  assert.match(added.message, /Matching in range: Veldspar/);
+  assert.match(added.message, /switch to the new queue within a second/);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice"]);
+
+  // A whole kind of rock is not an entry, and saying so is the point: "ice" is a
+  // word inside real rock names, so it can never mean the kind as well. The rest
+  // of the line is queued and a warning line says what was passed over.
+  const skipped = run("filter add 16262, ice, bitumens");
+  assert.match(skipped.message, /\n +warning: "ice" names a whole kind of rock/);
+  assert.match(skipped.message, /\/atm filter clear ice empties the ice list/);
+  assert.match(skipped.message, /\n {2}ice {4}: 1\. blue ice, 2\. Glacial Mass\n/,
+    "an entry queued as a type ID reads back as the rock it stands for");
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens"]);
+
+  // A bare number is a type ID, and one that names no rock can never match
+  // anything. It costs only itself: the rest of the line is queued, and the
+  // warning line says which number was dropped and where a place is set.
+  const orphan = run("filter add veldspar, 1, pyroxeres, dark ochre");
+  assert.match(orphan.message, /added dark ochre\./);
+  assert.match(orphan.message, /warning: "1" is not a rock's type ID/);
+  assert.match(orphan.message, /\/atm filter move <name> 1/);
+  assert.match(
+    orphan.message,
+    /warning: veldspar, pyroxeres are already in the queue and keep the place they have/,
+    "an entry that is already queued is not moved: \"add\" is not \"move\"",
+  );
+  assert.match(orphan.message, /\n {2}ore {4}: 1\. veldspar, 2\. pyroxeres, 3\. dark ochre\n/);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens", "dark ochre"],
+    "the two good names went in where they were, and the number no rock has was dropped");
+  run("filter del dark ochre");
+
+  // "add" never reorders, so adding a queued name on its own says so instead of
+  // quietly moving it to the end of the list.
+  const again = run("filter add veldspar");
+  assert.match(again.message, /nothing new to add/);
+  assert.match(again.message, /veldspar is already in the queue and keeps the place it has/);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens"]);
+
+  // A number that does name a rock is queued, and reads back as that rock rather
+  // than as the number that was typed.
+  const byID = run("filter add 1231");
+  assert.match(byID.message, /added Dense Veldspar\./);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens", "1231"]);
+  run("filter del 1231");
+  run("filter del 20");
+
+  // "move" reads a name and the place that name takes in its own list; a name
+  // with no number goes to the end of that list.
+  const moved = run("filter move veldspar 2");
+  assert.match(moved.message, /moved veldspar\./);
+  assert.match(moved.message, /\n {2}ore {3}: 1\. pyroxeres, 2\. veldspar\n/);
+  assert.deepEqual(queue(), ["pyroxeres", "veldspar", "blue ice", "16262", "bitumens"]);
+
+  const toEnd = run("filter move pyroxeres");
+  assert.match(toEnd.message, /\n {2}ore {4}: 1\. veldspar, 2\. pyroxeres\n/);
+  assert.match(
+    toEnd.message,
+    /warning: pyroxeres without a number, so it was placed at the end of the list/,
+    "a name typed without a number says where it went",
+  );
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens"]);
+
+  // The kind of the first name typed picks the list that is edited, and an entry
+  // of another kind is passed over instead of landing in the wrong list: naming an
+  // ice rock means the numbers count in the ice list and nothing else moves.
+  const scoped = run("filter move blue ice veldspar");
+  assert.match(scoped.message, /moved blue ice\./);
+  assert.match(scoped.message, /veldspar is not ice rock/);
+  assert.match(scoped.message, /\n {2}ice {4}: 1\. Glacial Mass, 2\. blue ice\n/);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "16262", "blue ice", "bitumens"]);
+
+  // "del" takes a name or a type ID, and the two are the same entry: the reply
+  // prints Glacial Mass for the queue that stores 16262, so the name finds it.
+  const byName = run("filter del Glacial Mass");
+  assert.match(byName.message, /dropped Glacial Mass\./);
+  // The other direction works too: the queue can hold the name while the player
+  // types the ID, because the reply prints nothing but names and that is what a
+  // player has in front of them. The line names what was stored, as always.
+  run("filter add glacial mass");
+  const droppedByID = run("filter del 16262");
+  assert.match(droppedByID.message, /dropped glacial mass\./);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "bitumens"]);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "bitumens"]);
+
+  // "clear" empties one kind's list and nothing else. It is the only command that
+  // takes a kind word, which is what "filter add ice" is answered with.
+  const cleared = run("filter clear ice");
+  assert.match(cleared.message, /dropped blue ice from the ice list\./);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "bitumens"]);
+  assert.match(run("filter clear ice").message, /the ice list is already empty/);
+  assert.match(run("filter clear gas").message, /clear takes one kind of rock/);
+  assert.match(run("filter clear").message, /clear takes one kind of rock/);
+  assert.match(run("filter clear ore ice").message, /clear takes one kind of rock/);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "bitumens"]);
+
+  // A word that cannot be an entry is refused, the 1.2.5 pin says what replaced
+  // it, and the queue has a ceiling the reply and the validator both enforce.
+  assert.match(run("filter add !!!").message, /is not a usable ore name/);
+  assert.match(run("filter add ice:glacial mass").message, /hangs a name off a kind of rock/);
+  assert.match(run("filter add").message, /add needs a name/);
+  assert.match(run("filter del").message, /del needs a name/);
+  assert.match(run("filter move").message, /move needs a name/);
+  assert.match(
+    run(`filter add ${Array.from({ length: 17 }, (_value, index) => `ore${index}`).join(" ")}`)
+      .message,
+    /at most 16 entries/,
+  );
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "bitumens"],
+    "none of those changed the queue");
+
+  // "del" on everything it holds leaves the queue empty again.
+  const all = run("filter del veldspar pyroxeres bitumens");
+  assert.match(all.message, /The queue is now empty, so every mineable rock counts again\./);
+  assert.equal(queue(), null, "an emptied queue stops filtering");
+});
+
+test("queue: a comma separates names, and one name may hold a space", () => {
+  const queue = require(path.join(__dirname, "..", "lib", "oreQueue.js"));
+  const kindsOf = (pattern) => ({
+    gneiss: ["ore"],
+    "dark ochre": ["ore"],
+    veldspar: ["ore"],
+    kernite: ["ore"],
+    "azure ice": ["ice"],
+  }[pattern] || []);
+
+  assert.deepEqual(queue.splitTypedWords("gneiss dark ochre", kindsOf), ["gneiss", "dark ochre"]);
+  assert.deepEqual(queue.splitTypedWords("dark ochre veldspar", kindsOf), ["dark ochre", "veldspar"]);
+  assert.deepEqual(queue.splitTypedWords("dark ochre, gneiss", kindsOf), ["dark ochre", "gneiss"]);
+  assert.deepEqual(queue.splitTypedWords("dark, ochre", kindsOf), ["dark", "ochre"]);
+  assert.deepEqual(queue.splitTypedWords("dark,ochre", kindsOf), ["dark", "ochre"]);
+  assert.deepEqual(queue.splitTypedWords(" veldspar , kernite ", kindsOf), ["veldspar", "kernite"]);
+
+  // A number is a type ID and never part of a name.
+  assert.deepEqual(queue.splitTypedWords("dark ochre 2", kindsOf), ["dark ochre", "2"]);
+  assert.deepEqual(queue.splitTypedWords("1231 dark ochre", kindsOf), ["1231", "dark ochre"]);
+
+  // A word that used to stand for a whole kind is a word inside a real name now,
+  // so "azure ice" is put back together like any other name of two words - and on
+  // its own the word stays a word, for a command to refuse.
+  assert.deepEqual(queue.splitTypedWords("azure ice", kindsOf), ["azure ice"]);
+  assert.deepEqual(queue.splitTypedWords("azure ice, veldspar", kindsOf), ["azure ice", "veldspar"]);
+  assert.deepEqual(queue.splitTypedWords("ice", kindsOf), ["ice"]);
+
+  // A word that cannot be an entry at all is left as typed, for the same reason.
+  assert.deepEqual(queue.splitTypedWords("gneiss !!!", kindsOf), ["gneiss", "!!!"]);
+  assert.deepEqual(queue.splitTypedWords("ice:glacial mass", kindsOf), ["ice:glacial", "mass"]);
+
+  // No catalogue to ask - an item table that cannot be read - reads exactly as it
+  // did before the joining rule existed.
+  assert.deepEqual(queue.splitTypedWords("gneiss dark ochre", null), ["gneiss", "dark", "ochre"]);
+});
+
+test("chat: a rock whose name is two words stays one entry", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const queue = () => runtime.getPlayerState(7).oreFilter;
+
+  // Typed without a comma, the words that name one rock stay together: this is
+  // what used to become "dark" and "ochre", two patterns that each match
+  // something, so nothing ever said the queue was not what the player meant.
+  const joined = run("filter add veldspar dark ochre");
+  assert.match(joined.message, /added veldspar, dark ochre\./);
+  assert.match(joined.message, /\n {2}ore {3}: 1\. veldspar, 2\. dark ochre\n/);
+  assert.deepEqual(queue(), ["veldspar", "dark ochre"]);
+
+  // The comma is the escape hatch: the same words, asked for as two patterns.
+  const apart = run("filter add dark, ochre");
+  assert.match(apart.message, /added dark, ochre\./);
+  assert.deepEqual(queue(), ["veldspar", "dark ochre", "dark", "ochre"]);
+
+  // A rock's place can follow a name of two words.
+  const placed = run("filter move dark ochre 1");
+  assert.match(placed.message, /moved dark ochre\./);
+  assert.deepEqual(queue(), ["dark ochre", "veldspar", "dark", "ochre"]);
+
+  // A misspelt second word is not joined, and lands on the warning line the way
+  // any name no rock has does.
+  run("filter clear ore");
+  const typo = run("filter add dark ocre");
+  assert.match(typo.message, /\n +warning: 1\. ocre \(no rock matches that name/);
+  assert.match(typo.message, /\n +ore +: 1\. dark$/m);
+  assert.deepEqual(queue(), ["dark", "ocre"]);
+
+  // A queue an older release wrote can hold the two words apart; "del" still
+  // drops what the player typed.
+  runtime.setPlayerOreFilter(7, ["dark", "ochre"]);
+  const cleaned = run("filter del dark ochre");
+  assert.match(cleaned.message, /dropped dark, ochre\./);
+  assert.equal(queue(), null);
+});
+
+test("chat: the forms that left the grammar say what took their place", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  // A kind word is no longer a way into the queue - "clear" is the command that
+  // empties one kind's list, and the warning line says so.
+  assert.match(run("filter add ice").message, /"ice" names a whole kind of rock/);
+  assert.match(run("filter del ice").message, /\/atm filter clear ice empties the ice list/);
+  assert.match(run("filter add any").message, /"any" stands for every rock/);
+  assert.match(run("filter add *").message, /"\*" stands for every rock/);
+  assert.equal(runtime.getPlayerState(7).oreFilter, null, "none of those queued anything");
+
+  // The pin a name could hang off one kind is gone, and naming it is friendlier
+  // than "not a usable ore name".
+  assert.match(
+    run("filter add ice:glacial mass").message,
+    /hangs a name off a kind of rock, and that spelling is gone/,
+  );
+
+  // A kind on its own is a kind of rock, not a command.
+  assert.match(run("filter ore").message, /is a kind of rock, not a command/);
+  assert.match(run("filter ice add veldspar").message, /is a kind of rock, not a command/);
+
+  // The list of what is around you keeps a command of its own.
+  assert.match(run("filter list").message, /"\/atm list" shows the rocks in range/);
+
+  // Anything else says how to add a name instead of guessing at it.
+  assert.match(run("filter veldspar").message, /filter takes add, move, del, clear, grade/);
+  assert.equal(runtime.getPlayerState(7).oreFilter, null, "none of them changed the queue");
+
+  // "filter" on its own is still how the queue is read back.
+  const shown = run("filter");
+  assert.match(shown.message, /nothing is queued/);
+  assert.match(shown.message, /fallback: any/);
+  assert.match(shown.message, /grade {3}: off/);
+  assert.match(shown.message, /commands: "\/atm filter help"/);
+});
+
+test("chat: /atm help and /atm filter help are two lists", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  // The top-level list is the commands that follow "/atm" and nothing else: it
+  // points at the filter's own list instead of carrying it along.
+  const top = run("help").message;
+  assert.match(top, /the commands that follow \/atm/);
+  assert.match(top, /\/atm filter help/);
+  assert.match(top, /"\/atm f \.\.\." is the same as "\/atm filter \.\.\."/,
+    "the top-level list names the filter's short spelling");
+  assert.equal(top.includes("filter add"), false,
+    "the filter's own commands no longer pad the top-level list");
+  assert.equal(top.includes("filter grade"), false);
+
+  // "/atm filter help" carries them in the same shape as the list above: one
+  // line per command, the line is what to type, and the detail lines sit under
+  // it indented by four spaces - no paragraphs.
+  const filterHelp = run("filter help").message;
+  assert.match(filterHelp, /the commands that follow \/atm filter/);
+  assert.match(filterHelp, /\n {2}\/atm filter add <name\|id>/);
+  assert.match(filterHelp, /\n {2}\/atm filter move <name\|id> <place>/);
+  assert.match(filterHelp, /\n {2}\/atm filter del <name\|id>/);
+  assert.match(filterHelp, /\n {2}\/atm filter clear ore\|ice\|moon/);
+  assert.match(filterHelp, /\n {2}\/atm filter grade on\|off/);
+  assert.match(filterHelp, /\n {2}\/atm filter fallback any\|idle/);
+  assert.match(filterHelp, /\n {2}\/atm filter - show the queue/);
+  assert.match(filterHelp, /\n {2}\/atm filter help - this list/);
+  assert.match(filterHelp, /\n {2}"\/atm f <arguments>" is the same as/);
+  const widest = filterHelp.split("\n").reduce((most, line) => Math.max(most, line.length), 0);
+  assert.ok(widest <= 84, "the filter list stays as narrow as the top-level one (" + widest + ")");
+  assert.equal(filterHelp.includes("first entry mined first:"), false,
+    "the paragraph under \"add\" is gone");
+
+  // Reading the queue still says where the list of commands is.
+  assert.match(run("filter").message, /\/atm filter help/);
+});
+
+test("chat: f is the filter's short spelling", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  // "/atm f" is "/atm filter" under a shorter name: the queue read back, the
+  // same verbs, the same help, the same wording.
+  assert.equal(run("f").message, run("filter").message);
+  assert.equal(run("f help").message, run("filter help").message);
+
+  const added = run("f add veldspar, pyroxeres");
+  assert.match(added.message, /added veldspar, pyroxeres\./);
+  assert.match(added.message, /\n {2}ore {3}: 1\. veldspar, 2\. pyroxeres\n/);
+  assert.match(run("f").message, /1\. veldspar, 2\. pyroxeres/);
+
+  assert.match(run("f move pyroxeres 1").message, /\n {2}ore {3}: 1\. pyroxeres, 2\. veldspar\n/);
+  assert.match(run("f grade on").message, /filter grade: on/);
+  assert.match(run("f fallback idle").message, /filter fallback: idle/);
+  assert.match(run("f del pyroxeres").message, /dropped pyroxeres/);
+  assert.match(run("f clear ore").message, /queue is now empty/);
+  assert.match(run("f bogus").message, /"\/atm f" is the same command/);
+
+  // The short spelling is a filter verb, not a top-level command of its own:
+  // "/atm fallback" still means what it always did, and only "filter" grew one.
+  assert.match(run("fallback idle").message, /filter fallback: idle/);
+  assert.equal(chatCommand.matchCommand("/atm f", config), "f");
+  assert.equal(chatCommand.matchCommand("/atm fallback", config), "fallback");
+  assert.equal(chatCommand.matchCommand("/atm fill", config), "fill");
+});
+
+test("chat: switching the grade preference re-tasks working drones", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const note = (patch) => runtime._testing.noteQueueSignature(7, {
+    oreFilter: ["veldspar"], filterFallback: "any", filterGrade: false, ...patch,
+  });
+
+  assert.equal(note({}), false, "the first pass only notes the setup");
+  assert.equal(note({}), false, "an unchanged setup is not a change");
+  assert.equal(note({ filterGrade: true }), true,
+    '"filter grade on" re-tasks the way a queue edit does');
+  assert.equal(note({ filterGrade: true }), false);
+  assert.equal(note({ filterGrade: false }), true, '"filter grade off" re-tasks as well');
+});
+test("filter: the ore name catalogue reads the game's own rock groups", () => {
+  const oreNames = require(path.join(__dirname, "..", "lib", "oreNames.js"));
+  const rows = [
+    { typeID: 1230, name: "Veldspar", groupID: 462, categoryID: 25, groupName: "Veldspar" },
+    { typeID: 1231, name: "Compressed Veldspar", groupID: 462, categoryID: 25, groupName: "Veldspar" },
+    { typeID: 16264, name: "Blue Ice", groupID: 465, categoryID: 25, groupName: "Ice" },
+    { typeID: 17978, name: "Clear Icicle IV-Grade", groupID: 465, categoryID: 25, groupName: "Ice" },
+    { typeID: 45490, name: "Zeolites", groupID: 1884, categoryID: 25, groupName: "Ubiquitous Moon Asteroids" },
+    { typeID: 4094, name: "Cosmetic Asteroid 1", groupID: 4094, categoryID: 25, groupName: "Scalable Decorative Asteroid" },
+    { typeID: 2, name: "Corporation", groupID: 2, categoryID: 1, groupName: "Corporation" },
+  ];
+  const catalog = oreNames.createOreCatalog({
+    readRows: () => rows,
+    moonGroupIDs: [1884, 1920, 1921, 1922, 1923],
+  });
+  assert.equal(catalog.isReady(), true, "the game's asteroid rows are the catalogue");
+  assert.deepEqual(catalog.kindsFor("veldspar"), ["ore"]);
+  assert.deepEqual(catalog.kindsFor("1230"), ["ore"], "a type ID groups like its name");
+  assert.deepEqual(catalog.kindsFor("16264"), ["ice"]);
+  assert.deepEqual(catalog.kindsFor("iv-grade"), ["ice"]);
+  assert.deepEqual(catalog.kindsFor("zeolites"), ["moon"]);
+  assert.deepEqual(catalog.kindsFor("cosmetic"), [], "a decorative rock is not a target");
+  assert.deepEqual(catalog.kindsFor("kernite"), [], "no rock in this table has that name");
+  assert.deepEqual(catalog.suggestionsFor("veldsparx"), ["Veldspar"]);
+  assert.deepEqual(catalog.suggestionsFor("zeolite"), ["Zeolites"]);
+  assert.deepEqual(catalog.suggestionsFor("zzzzzzzz"), []);
+
+  // What the live mining runtime calls a rock outranks the static table: this
+  // is what keeps a reply in step with a server whose data says otherwise.
+  catalog.remember(1231, "moon");
+  assert.deepEqual(catalog.kindsFor("compressed veldspar"), ["moon"]);
+  assert.deepEqual(catalog.kindsFor("veldspar"), ["ore", "moon"],
+    "a name that spans both grades is listed under both kinds");
+
+  // A server whose item types cannot be read leaves the queue ungrouped
+  // instead of guessing a kind for every entry.
+  const blind = oreNames.createOreCatalog({
+    readRows: () => { throw new Error("no item types"); },
+  });
+  assert.equal(blind.isReady(), false);
+  assert.deepEqual(blind.kindsFor("veldspar"), []);
+});
+
+test("chat: every filter command prints the lists the numbers count in", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  // One line per kind of rock, and the number restarts in every list, because
+  // that is the number "move" takes.
+  const added = run("filter add veldspar blue ice bitumens");
+  assert.match(added.message, /\n {2}ore {3}: 1\. veldspar\n/);
+  assert.match(added.message, /\n {2}ice {3}: 1\. blue ice\n/);
+  assert.match(added.message, /\n {2}moon {2}: 1\. bitumens$/);
+
+  // A word that was passed over adds its own line, and the lists are still
+  // printed underneath it.
+  const skipped = run("filter add 16262, ore");
+  assert.match(skipped.message, /"ore" names a whole kind of rock/);
+  assert.match(skipped.message, /\n {2}ice {4}: 1\. blue ice, 2\. Glacial Mass\n/);
+
+  // del answers the same way, so nobody has to ask twice.
+  const dropped = run("filter del blue ice");
+  assert.match(dropped.message, /\n {2}ice {3}: 1\. Glacial Mass\n/);
+
+  // And so does clear.
+  const cleared = run("filter clear moon");
+  assert.match(cleared.message, /\n {2}moon {2}: nothing$/);
+
+  // An empty queue has nothing to list and says so instead.
+  assert.match(run("filter clear ice").message, /dropped Glacial Mass from the ice list\./);
+  const emptied = run("filter clear ore");
+  assert.match(emptied.message, /The queue is now empty/);
+  assert.equal(/ore {3}:/.test(emptied.message), false);
+  assert.equal(runtime.getPlayerState(7).oreFilter, null);
+});
+
+test("chat: an entry that matches no rock gets a warning line", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  const typo = run("filter add veldsparx");
+  assert.match(
+    typo.message,
+    /\n +warning: 1\. veldsparx \(no rock matches that name, did you mean Veldspar\?\)$/,
+  );
+  assert.deepEqual(runtime.getPlayerState(7).oreFilter, ["veldsparx"],
+    "the entry is kept: the mod does not correct a player on its own");
+
+  // An entry queued as a type ID is grouped by the kind of rock it names, and
+  // printed as the name of that rock rather than as a number to go looking up.
+  const byID = run("filter add 16264");
+  assert.match(byID.message, /\n +ice +: 1\. Blue Ice\n/);
+  assert.deepEqual(runtime.getPlayerState(7).oreFilter, ["veldsparx", "16264"]);
+
+  // Nothing is close enough to suggest, so the line just says so.
+  const garbage = run("filter add zzzzzzzz");
+  assert.match(garbage.message, /\n +warning: 2\. zzzzzzzz \(no rock matches that name\)$/);
+  assert.match(garbage.message, /\n +ice +: 1\. Blue Ice\n/);
+});
+
+test("chat: move reorders with the same numbers the reply prints", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const queue = () => runtime.getPlayerState(7).oreFilter;
+
+  run("filter add veldspar pyroxeres blue ice bitumens");
+
+  // The number counts inside that rock's own list, and the entry that was there
+  // shifts along.
+  const moved = run("filter move pyroxeres 1");
+  assert.match(moved.message, /moved pyroxeres\./);
+  assert.match(moved.message, /\n {2}ore {3}: 1\. pyroxeres, 2\. veldspar\n/);
+  assert.deepEqual(queue(), ["pyroxeres", "veldspar", "blue ice", "bitumens"]);
+
+  // With no number the entry goes to the end of its own list.
+  const toEnd = run("filter move pyroxeres");
+  assert.match(toEnd.message, /\n {2}ore {4}: 1\. veldspar, 2\. pyroxeres\n/);
+  assert.match(toEnd.message, /warning: pyroxeres without a number/);
+  assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "bitumens"]);
+
+  // A number past the end of a list lands at the end of it, and the only entry of
+  // a list stays where it is however big the number is.
+  const far = run("filter move veldspar 9");
+  assert.match(far.message, /\n {2}ore {3}: 1\. pyroxeres, 2\. veldspar\n/);
+  run("filter move bitumens 5");
+  assert.deepEqual(queue(), ["pyroxeres", "veldspar", "blue ice", "bitumens"],
+    "the only moon ore is already at the end of the moon list");
+
+  // A name that is not queued is reported, not added: this reorders the queue.
+  const missing = run("filter move kernite 1");
+  assert.match(missing.message, /nothing in the queue matches kernite/);
+  const unclear = run("filter move");
+  assert.match(unclear.message, /move needs a name/);
+
+  // The first name picks the list, so a number meant for another kind of rock is
+  // not a number this command can use.
+  const foreign = run("filter move blue ice 1 pyroxeres 1");
+  assert.match(foreign.message, /pyroxeres is not ice rock/);
+  assert.deepEqual(queue(), ["pyroxeres", "veldspar", "blue ice", "bitumens"],
+    "the ore list was left alone");
+
+  run("filter del veldspar pyroxeres blue ice bitumens");
+  const empty = run("filter move veldspar 1");
+  assert.match(empty.message, /the queue is empty/);
+});
+
+test("grade: a rock's type name is where its grade is written", () => {
+  const grades = require(path.join(__dirname, "..", "lib", "oreGrades.js"));
+  assert.equal(grades.gradeOf("Veldspar"), 1, "the bare name is grade I");
+  assert.equal(grades.gradeOf("Veldspar 0-Grade"), 0, "and 0-Grade is the one below it");
+  assert.equal(grades.gradeOf("Veldspar II-Grade"), 2);
+  assert.equal(grades.gradeOf("Veldspar III-Grade"), 3);
+  assert.equal(grades.gradeOf("Veldspar IV-Grade"), 4);
+  assert.equal(grades.gradeOf("Compressed Veldspar IV-Grade"), 4,
+    "the compressed prefix says nothing about the grade");
+  assert.equal(grades.gradeOf("Ancient Compressed Blue Ice IV-Grade"), 4);
+  assert.equal(grades.gradeOf("Blue Ice"), 1);
+  assert.equal(grades.gradeOf("Raspite X-Grade"), 10, "the moon families go to X");
+  assert.equal(grades.gradeOf("Dense Veldspar"), 1, "a word that is not a mark is not a grade");
+  assert.equal(grades.gradeOf("Dark Ochre II-Grade"), 2);
+  assert.equal(grades.gradeOf(""), 1);
+  assert.equal(grades.gradeOf(null), 1);
+});
+
+test("filter: the grade preference mines the richest rock of a family first", () => {
+  const rocks = () => [
+    makeRock(3001, "ore", 17425, 9000),
+    makeRock(3002, "ore", 17426, 30000),
+  ];
+
+  // Off by default: the closer rock wins even though its grade is the lower one.
+  const plain = oneOreDroneWorld(rocks());
+  const runtime = createRuntime({ config: makeConfig(), deps: plain.deps });
+  assert.equal(runtime.getPlayerState(7).filterGrade, false);
+  runtime.onSceneTick(plain.scene, 1000);
+  assert.deepEqual(plain.calls.mine.map((call) => call.targetID), [3001],
+    "with the preference off, Dark Ochre is mined because it is the closer one");
+
+  // On, the II-Grade rock is mined first even though it is the further one, and
+  // "list" reads in the order the drones will work through.
+  const graded = oneOreDroneWorld(rocks());
+  const gradeRuntime = createRuntime({ config: makeConfig(), deps: graded.deps });
+  gradeRuntime.setPlayerFilterGrade(7, true);
+  assert.equal(gradeRuntime.getPlayerState(7).filterGrade, true);
+  gradeRuntime.onSceneTick(graded.scene, 1000);
+  assert.deepEqual(graded.calls.mine.map((call) => call.targetID), [3002],
+    "the higher grade wins over the shorter distance");
+  assert.deepEqual(
+    gradeRuntime.describeSceneOres(graded.session, null).entries.map((entry) => entry.name),
+    ["Dark Ochre II-Grade", "Dark Ochre"],
+  );
+
+  // The queue still comes first: a rock the player ranked above another is mined
+  // before it even when the other one carries the richer grade.
+  const ordered = oneOreDroneWorld(rocks());
+  const orderedRuntime = createRuntime({ config: makeConfig(), deps: ordered.deps });
+  orderedRuntime.setPlayerFilterGrade(7, true);
+  orderedRuntime.setPlayerOreFilter(7, ["17425", "17426"]);
+  orderedRuntime.onSceneTick(ordered.scene, 1000);
+  assert.deepEqual(ordered.calls.mine.map((call) => call.targetID), [3001],
+    "priority beats grade");
+
+  // A per-character choice that travels with the players file, and "default"
+  // hands it back to the server setting.
+  gradeRuntime.setPlayerFilterGrade(7, null);
+  assert.equal(gradeRuntime.getPlayerState(7).filterGrade, false);
+});
+
+test("chat: the grade preference is per character and off unless asked for", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  assert.match(run("filter grade").message, /filter grade: off/);
+  assert.match(run("filter grade on").message, /filter grade: on/);
+  assert.match(run("filter grade on").message, /switch to the new queue within a second/,
+    "the grade switch re-tasks working drones, so the reply says so");
+  assert.equal(runtime.getPlayerState(7).filterGrade, true);
+  assert.match(run("filter grade").message, /filter grade: on/);
+  assert.match(run("filter grade default").message, /filter grade: off/);
+  assert.equal(runtime.getPlayerState(7).filterGrade, false);
+  assert.match(run("filter grade sideways").message, /grade must be "on", "off" or "default"/);
+
+  run("filter grade on");
+  assert.match(run("filter").message, /grade {3}: on/);
+  run("filter add veldspar");
+  assert.match(run("status").message, /grade on/);
+
+  // The players file takes the same spellings a config file does, and an entry
+  // that only holds it can be dropped again by setting it to null.
+  assert.equal(playerSettings.normalizeEntry({ filterGrade: "on" }).filterGrade, true);
+  assert.equal(playerSettings.normalizeEntry({ filterGrade: null }), null);
+});
+test("chat: /atm, /altmining and their ! forms reach the mod, and the retired spellings do not", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  assert.equal(chatCommand.matchCommand("/atm status", config), "status");
+  assert.equal(chatCommand.matchCommand("!atm status", config), "status");
+  assert.equal(chatCommand.matchCommand("/altmining status", config), "status");
+  assert.equal(chatCommand.matchTrigger("!atm filter ore clear", config), "filter ore clear");
+  assert.equal(
+    chatCommand.matchCommand("/alternateminingdrones status", config),
+    null,
+    "the long spelling is gone - /atm and /altmining are the whole set",
+  );
+  assert.equal(
+    chatCommand.matchCommand("/somethingelse status", config),
+    null,
+    "another command still goes to the vendor handler",
+  );
+
+  const redirected = chatCommand.handleCommand(runtime, config, world.session, "ore veldspar");
+  assert.match(redirected.message, /is a kind of rock, not a command/);
+  assert.match(redirected.message, /\/atm filter clear ore/,
+    "the redirect names the command that still takes a kind word");
+  assert.equal(/filter add ore/.test(redirected.message), false,
+    "and not the spelling 1.2.9 stopped accepting");
+  assert.equal(runtime.getPlayerState(7).oreFilter, null, "the old form changes nothing");
+
+  const shown = chatCommand.handleCommand(runtime, config, world.session, "filter ore");
+  assert.match(shown.message, /is a kind of rock, not a command/);
+});
+test("chat: fallback is per character and can go back to the server default", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  assert.equal(runtime.getPlayerState(7).filterFallback, "any");
+
+  const idle = chatCommand.handleCommand(runtime, config, world.session, "fallback idle");
+  assert.match(idle.message, /fallback: idle/);
+  assert.equal(runtime.getPlayerState(7).filterFallback, "idle");
+
+  chatCommand.handleCommand(runtime, config, world.session, "filter fallback default");
+  assert.equal(runtime.getPlayerState(7).filterFallback, "any");
+
+  const bad = chatCommand.handleCommand(runtime, config, world.session, "fallback sideways");
+  assert.match(bad.message, /must be "any", "idle" or "default"/);
+});
+
+test("chat: list names the ore around the ship, status shows the filter", () => {
+  const world = makeWorld();
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+
+  const withoutFilter = chatCommand.buildStatusText(runtime, world.session);
+  assert.equal(/filter\s+:/u.test(withoutFilter), false, "an inactive filter is not worth a line");
+
+  runtime.setPlayerOreFilter(7, ["veldspar"]);
+  const status = chatCommand.buildStatusText(runtime, world.session);
+  assert.match(status, /filter\s+: veldspar \(fallback any/u);
+  assert.match(status, /2 of 3 rocks in range match/u);
+
+  const list = chatCommand.handleCommand(runtime, config, world.session, "list");
+  assert.match(list.message, /Veldspar/);
+  assert.match(list.message, /Blue Ice/);
+  assert.match(list.message, /2 rocks, 200 m3 left, nearest 9500 m/u);
+  assert.match(list.message, /\* ore/u, "the rock the filter already matches is marked");
+
+  const iceOnly = chatCommand.handleCommand(runtime, config, world.session, "list ice");
+  assert.match(iceOnly.message, /Blue Ice/);
+  assert.equal(/Veldspar/u.test(iceOnly.message), false);
+
+  const badScope = chatCommand.handleCommand(runtime, config, world.session, "list gas");
+  assert.match(badScope.message, /list takes "ore", "ice" or "moon"/);
+});
+
+test("chat: list and filter still answer when players may not change settings", () => {
+  const world = makeWorld();
+  const config = makeConfig({ allowPlayerToggle: false });
+  const runtime = createRuntime({ config, deps: world.deps });
+  const list = chatCommand.handleCommand(runtime, config, world.session, "list");
+  assert.match(list.message, /mineable rocks in range/);
+  const shown = chatCommand.handleCommand(runtime, config, world.session, "filter");
+  assert.match(shown.message, /nothing is queued/);
+  const refused = chatCommand.handleCommand(runtime, config, world.session, "filter ore add 1 veldspar");
+  assert.match(refused.message, /disabled by the server/);
+});
+
+test("copy: the identifier takes an id, a User: label or a unique name", () => {
+  const copy = require(path.join(__dirname, "..", "lib", "copySettings.js"));
+  assert.deepEqual(copy.parseCopyTarget("User:140000005"), { raw: "140000005" });
+  assert.deepEqual(copy.parseCopyTarget(" id : 140000005 "), { raw: "140000005" });
+  assert.deepEqual(copy.parseCopyTarget("140000005"), { raw: "140000005" });
+  assert.deepEqual(copy.parseCopyTarget("Example Miner"), { raw: "Example Miner" });
+  assert.equal(copy.parseCopyTarget("   "), null);
+  assert.equal(copy.parseCopyTarget("User:"), null);
+
+  const entries = {
+    "8": { characterName: "Fleet Lead" },
+    "9": { characterName: "Fleet Wing" },
+    "10": {},
+  };
+  assert.equal(copy.matchCopySource(entries, "8").characterID, 8);
+  const labeled = copy.parseCopyTarget("user:10");
+  assert.equal(copy.matchCopySource(entries, labeled.raw).characterID, 10,
+    "an entry with no name stored is still reachable by its id");
+  assert.equal(copy.matchCopySource(entries, "fleet lead").characterID, 8);
+  assert.equal(copy.matchCopySource(entries, "FLEET WING").characterID, 9);
+  assert.equal(copy.matchCopySource(entries, "fleet l").characterID, 8, "a unique prefix is enough");
+  assert.equal(copy.matchCopySource(entries, "eet wi").characterID, 9, "so is a unique substring");
+  assert.equal(copy.matchCopySource(entries, "fleet").error, "ambiguous");
+  assert.deepEqual(copy.matchCopySource(entries, "fleet").candidates, ["8", "9"]);
+  assert.equal(copy.matchCopySource(entries, "nobody").error, "not-found");
+  assert.equal(copy.matchCopySource(entries, "140000099").error, "not-found");
+  // The listing asks the same questions but keeps every answer, so "copy list
+  // fleet" can show both characters where "copy fleet" refuses to guess one.
+  assert.deepEqual(copy.matchStoredCharacters(entries, "fleet"), [8, 9]);
+  assert.deepEqual(copy.matchStoredCharacters(entries, "fleet l"), [8], "the tightest tier wins");
+  assert.deepEqual(copy.matchStoredCharacters(entries, "10"), [10], "an id is an id");
+  assert.deepEqual(copy.matchStoredCharacters(entries, "nobody"), []);
+  assert.deepEqual(copy.matchStoredCharacters(entries, "   "), []);
+  assert.equal(copy.hasCopyableSettings(entries["8"]), false, "a name alone is not a setup");
+  assert.equal(copy.hasCopyableSettings({ characterName: "x", targetMode: "focus" }), true);
+});
+
+test("chat: /atm copy finds a character and hands their setup over", () => {
+  const store = makePlayersFile("copy");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  const world = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
+  });
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps, players });
+  const lead = { characterID: 8, characterName: "Fleet Lead" };
+  const alt = { characterID: 7, characterName: "Alt Two" };
+
+  chatCommand.handleCommand(runtime, config, lead, "focus");
+  chatCommand.handleCommand(runtime, config, lead, "threshold 3");
+  chatCommand.handleCommand(runtime, config, lead, "range 45000");
+  chatCommand.handleCommand(runtime, config, lead, "filter add pyroxeres veldspar");
+  chatCommand.handleCommand(runtime, config, lead, "fallback idle");
+  runtime.setPlayerControlPolicy(7, "off", { characterName: "Alt Two" });
+
+  // "/atm copy" on its own is the shape of the command and nothing else, and
+  // the roster answers to "copy list" so a bare copy stays short.
+  const usage = chatCommand.handleCommand(runtime, config, alt, "copy");
+  assert.match(usage.message, /part of a name is enough/);
+  assert.match(usage.message, /\/atm copy User:140000005/);
+  assert.match(usage.message, /\/atm copy list \[name\]/);
+  assert.equal(/Fleet Lead/.test(usage.message), false, "a bare copy lists nobody");
+
+  const listed = chatCommand.handleCommand(runtime, config, alt, "copy list");
+  assert.match(listed.message, /copy list - 2 character\(s\) stored here/);
+  assert.match(listed.message, /character\(s\) stored here/);
+  assert.match(listed.message, /Fleet Lead/);
+  assert.match(listed.message, /pyroxeres, veldspar/);
+  assert.match(listed.message, /\(you\)/, "the caller is marked in the list");
+
+  // The listing narrows itself with the same name matching a copy takes, and
+  // it keeps every match instead of refusing an ambiguous one.
+  const narrowed = chatCommand.handleCommand(runtime, config, alt, "copy list fleet");
+  assert.match(narrowed.message, /copy list "fleet" - 1 of 2 character\(s\) match/);
+  assert.equal(/Alt Two/.test(narrowed.message), false, "the caller is filtered out too");
+  const byLabel = chatCommand.handleCommand(runtime, config, alt, "copy list User:8");
+  assert.match(byLabel.message, /copy list "8" - 1 of 2 character\(s\) match/,
+    "the label the client shows works as a filter too");
+  const noMatch = chatCommand.handleCommand(runtime, config, alt, "copy list nobody");
+  assert.match(noMatch.message, /nobody stored here matches "nobody"/);
+
+  const copied = chatCommand.handleCommand(runtime, config, alt, "copy User:8");
+  assert.match(copied.message, /copied Fleet Lead \(8\) onto you/);
+  assert.match(copied.message, /automation : ON \(focus\)/);
+  assert.match(copied.message, /threshold  : 3 m3/);
+  assert.match(copied.message, /range      : 45\.0 km/);
+  assert.match(copied.message, /fallback idle/);
+  assert.match(copied.message, /new queue within a second/);
+
+  const source = runtime.getPlayerState(8);
+  const target = runtime.getPlayerState(7);
+  for (const field of [
+    "enabled", "targetMode", "rangeOverrideMeters", "minHoldFreeVolumeM3",
+    "playerControlPolicy", "filterFallback",
+  ]) {
+    assert.deepEqual(target[field], source[field], field + " must match the source");
+  }
+  assert.deepEqual(target.oreFilter, source.oreFilter);
+  assert.equal(target.playerControlPolicy, "hold",
+    "the leftover takeover setting is replaced instead of merged");
+
+  runtime.clearPlayerSettings(7);
+  const byName = chatCommand.handleCommand(runtime, config, alt, "copy fleet lead");
+  assert.match(byName.message, /copied Fleet Lead \(8\) onto you/);
+  assert.deepEqual(runtime.getPlayerState(7).oreFilter, ["pyroxeres", "veldspar"]);
+
+  runtime.clearPlayerSettings(7);
+  const misspelt = chatCommand.handleCommand(runtime, config, alt, "copy fleet leda");
+  assert.match(misspelt.message, /copied Fleet Lead \(8\) onto you/,
+    "a name that is one letter off still finds the character");
+
+  runtime.setPlayerEnabled(9, true, { characterName: "Fleet Lead Two" });
+  const ambiguous = chatCommand.handleCommand(runtime, config, alt, "copy fleet");
+  assert.match(ambiguous.message, /more than one character/);
+  assert.match(ambiguous.message, /9 \(Fleet Lead Two\)/);
+
+  const reordered = chatCommand.handleCommand(runtime, config, alt, "copy lead two");
+  assert.match(reordered.message, /copied Fleet Lead Two \(9\) onto you/,
+    "the words of a name may be typed in any order");
+
+  const unknown = chatCommand.handleCommand(runtime, config, alt, "copy nobody");
+  assert.match(unknown.message, /no character matching "nobody" has settings stored here/);
+
+  const self = chatCommand.handleCommand(runtime, config, lead, "copy 8");
+  assert.match(self.message, /that is you/);
+
+  const off = chatCommand.handleCommand(runtime, makeConfig({ allowPlayerCopy: false }), alt, "copy 8");
+  assert.match(off.message, /disabled by the server/);
+
+  const readOnly = makeConfig({ allowPlayerToggle: false });
+  const gated = chatCommand.handleCommand(runtime, readOnly, alt, "copy 8");
+  assert.match(gated.message, /disabled by the server/);
+  const stillListed = chatCommand.handleCommand(runtime, readOnly, alt, "copy list");
+  assert.match(stillListed.message, /Fleet Lead/, "the list is read-only, so it still answers");
+  const offListing = chatCommand.handleCommand(
+    runtime, makeConfig({ allowPlayerCopy: false }), alt, "copy list");
+  assert.match(offListing.message, /disabled by the server/,
+    "allowPlayerCopy: false removes the listing too");
+
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+// The installer suite ships beside the mod in the development tree and in the
+// installer package; a mod folder copied straight into mods/ has neither.
+require("./installer.js")({ test, modDir });
+
+let failures = 0;
+for (const entry of tests) {
+  try {
+    entry.fn();
+    console.log(`  ok  ${entry.name}`);
+  } catch (error) {
+    failures += 1;
+    console.error(`FAIL  ${entry.name}`);
+    console.error(error && error.stack ? error.stack : error);
+  }
+}
+console.log(`\n${tests.length - failures}/${tests.length} passed`);
+if (failures > 0) {
+  process.exitCode = 1;
+}

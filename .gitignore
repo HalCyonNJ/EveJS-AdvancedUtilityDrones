@@ -1,0 +1,15 @@
+# Local settings. .env.example is the documented template and is published.
+.env
+
+# Installed dependencies
+node_modules/
+
+# Built artifacts: the two zips are attached to GitHub Releases, not committed.
+dist/
+
+# Scratch
+*.log
+*.tmp
+
+# Installer rollback snapshots
+_*backup*/

@@ -1,0 +1,43 @@
+{
+  "_comment": "Copy to <EveJS root>/config/alternateMiningDrones.json - the installer creates it for you, and never overwrites it afterwards. Under Docker that directory is bind-mounted, so a change needs a container restart, never an image rebuild. Keys are the env var names from .env.example without the EVEJS_ALT_MINING_DRONES_ prefix, and both spellings are accepted. The full list lives in config.js KEYS. Per-character choices are NOT here: they live in config/alternateMiningDrones.players.json, which /atm writes and the loader reads back on every restart. configVersion is the installer's own stamp: it names the release whose key set this file was brought up to, and an install or update adds the keys a later release introduced - it never changes a value that is already here.",
+
+  "configVersion": "1.3.0",
+
+  "enabled": true,
+  "verbose": false,
+  "scanIntervalMs": 500,
+
+  "targetMode": "spread",
+  "claimPenaltyMeters": 15000,
+  "maxCandidates": 48,
+  "filterScanLimit": 512,
+  "filterFallback": "any",
+  "filterGrade": false,
+  "retargetOnFilterChange": true,
+
+  "rangeMode": "ship",
+  "rangeMeters": null,
+  "rangeMinMeters": 1000,
+  "rangeMaxMeters": 1000000,
+  "baseRangeMeters": 20000,
+
+  "minHoldFreeVolumeM3": 2,
+  "recallOnFullHold": true,
+
+  "recallOnDamage": true,
+  "damageThreshold": 0,
+
+  "playerControlPolicy": "hold",
+  "allowPlayerToggle": true,
+  "allowPlayerCopy": true,
+  "enabledByDefault": true,
+  "chatTrigger": true,
+
+  "postLaunchDelayMs": 2000,
+  "stateRefreshMs": "0,1000,2500,5000",
+  "stateKeepAliveMs": 5000,
+  "maxStalledReassignments": 4,
+
+  "refreshStaleSceneCache": true,
+  "playersFile": ""
+}
