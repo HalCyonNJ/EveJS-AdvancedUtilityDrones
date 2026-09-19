@@ -86,8 +86,7 @@ The folder name matters: the preload points at `mods\AlternateMiningDrones`, so 
 unpacks as `EveJS-AlternateMiningDrones-main` has to be renamed to that.
 
 ```text
-installer\install.bat      this checkout
-install.bat                the same file at a release package's root
+installer\install.bat
 ```
 
 What it does is register the preload for the deployment you actually run - Docker or native - and
@@ -135,8 +134,7 @@ A healthy boot logs five lines:
 ### Updating
 
 ```text
-installer\update.bat       this checkout
-update.bat                 the same file at a release package's root
+installer\update.bat
 ```
 
 A reinstall is already an upgrade: `copyPayload` never overwrites a local `.env`, and the two

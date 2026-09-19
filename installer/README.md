@@ -5,14 +5,14 @@ closest ore or ice inside the ship's drone control range and starts mining, and 
 itself when the hold is full or one of the drones takes fire. No client update is required, and the
 mod never edits EveJS source on disk - three module exports are wrapped in memory at startup.
 
-The mod itself is in [`AlternateMiningDrones/`](AlternateMiningDrones/). Its
-[README](AlternateMiningDrones/README.md) lists the settings, and
-[HOW-IT-WORKS.md](AlternateMiningDrones/HOW-IT-WORKS.md) explains the mechanism.
+This installer lives inside the mod folder, beside `loader.js`. The mod itself is
+the folder above; its [README](../README.md) lists the settings, and
+[HOW-IT-WORKS.md](../HOW-IT-WORKS.md) explains the mechanism.
 
 The full handbook - install options, every setting, the in-game commands, the per-character file,
-when the drones come home, troubleshooting - is [`MANUAL.md`](MANUAL.md). What each version
-changed is in [`CHANGELOG.md`](CHANGELOG.md). Both files also ship inside
-[`AlternateMiningDrones/`](AlternateMiningDrones/), so an installed copy keeps its own manual.
+when the drones come home, troubleshooting - is [`MANUAL.md`](../MANUAL.md). What each version
+changed is in [`CHANGELOG.md`](../CHANGELOG.md). Both files live at the mod's root, so an
+installed copy keeps its own manual.
 
 ## Requirements
 
