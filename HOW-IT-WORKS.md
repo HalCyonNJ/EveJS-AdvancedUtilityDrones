@@ -696,20 +696,21 @@ RunTests.bat      (or: node test/run.js)
 All of it runs with dependency injection or fixture text; no server is started and no game data is
 touched, which is why `RunTests.bat` is safe to run on a live box.
 
-## 10. Packaging
+## 10. Packaging and distribution
 
-`BuildPackage.bat` (or `node tools/build-package.js`) writes two archives into `dist/`, both built
-from this checkout and byte-identical between runs - the ZIP entries carry a fixed timestamp:
+**Distribution is the GitHub repository.** `HalCyonNJ/EveJS-AlternateMiningDrones` *is* this folder, so
+the per-tag `Source code (zip)` GitHub generates is the release artifact: there is no local build step
+and no archive to keep, because the installer half and the payload are the same tree the user
+downloads. This replaced the old `BuildPackage.bat` / `node tools/build-package.js` step, which wrote
+two zips into `dist/` - an installer package (`install.bat` + `installer/lib/` + the payload inside
+`AlternateMiningDrones/`) and a launcher package (the payload folder alone). `dist/` was deleted on
+2026-09-20 and `BuildPackage.bat` is no longer a distribution path.
 
-```text
-AlternateMiningDrones-1.3.0-EveJS-0.12.8.zip            installer + payload, for a manual install
-AlternateMiningDrones-1.3.0-EveJS-0.12.8-launcher.zip   payload only, for EveJS Launcher
-```
-
-The installer half is an explicit allow-list in `tools/build-package.js`, not a directory walk: a new
-`lib/` module is ignored until it is named there, so it cannot be shipped half-wired. A test asserts
-that every module the packaged `install.js` / `uninstall.js` / `update.js` require is present in the
-archive, which is what catches that mistake.
+What still matters is the pruning contract, which now serves only the installer: `installer/`, `tools/`,
+`dist/`, `node_modules/`, `.git/` and `BuildPackage.bat` are development-only and are listed in
+`DEV_ONLY_DIRECTORIES` / `DEV_ONLY_FILES` in `installer/lib/deployment.js`, which is what keeps them out
+of an installed `mods/AlternateMiningDrones` folder. That list also governed the packager's payload
+half, which is why a leaked development file used to be the failure to look for.
 
 `update.js` is the same program as `install.js` with a different label: re-running the installer already
 archives the folder it is about to replace and re-applies the same idempotent registrations, and
@@ -720,12 +721,8 @@ inserts those keys and a `configVersion` stamp, and never rewrites a value that 
 So `update.bat` still adds no second code path - it reports the version it moved from and to, and what
 it added to the configuration.
 
-The payload half is this folder minus `installer/`, `tools/`, `dist/` and `BuildPackage.bat` -
-see `DEV_ONLY_DIRECTORIES` / `DEV_ONLY_FILES` in `installer/lib/deployment.js`.
-
-`README.md` is in both archives (it documents the runtime behaviour, which an operator needs), while
-`HOW-IT-WORKS.md` rides along in the payload because it is the contract whoever maintains a fork has
-to keep.
+`README.md` documents the runtime behaviour an operator needs, and `HOW-IT-WORKS.md` rides along in the
+payload because it is the contract whoever maintains a fork has to keep.
 
 ### Finding the EveJS root
 

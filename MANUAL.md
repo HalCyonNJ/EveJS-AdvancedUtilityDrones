@@ -72,17 +72,19 @@ is saved for your character and survives a restart.
 
 ## 4. Installing
 
-Two archives ship; take the one that matches how you install. You never need both.
+Get the mod folder into `<EveJS root>\mods\AlternateMiningDrones` - clone the repository, copy the
+folder, or unpack `Source code (zip)` from the release you want - and run the installer from inside it.
+The folder name matters: the preload points at `mods\AlternateMiningDrones`, so an archive that unpacks
+as `EveJS-AlternateMiningDrones-main` has to be renamed to that.
 
-| Archive | Use it when |
-|---|---|
-| `AlternateMiningDrones-1.3.0-EveJS-0.12.8.zip` | You install on the server yourself: `install.bat`, `update.bat`, `uninstall.bat`, `status.bat`, the installer `lib/`, and the `AlternateMiningDrones/` folder they copy into `mods/`. |
-| `AlternateMiningDrones-1.3.0-EveJS-0.12.8-launcher.zip` | You install through EveJS Launcher. The mod folder alone, at the archive root. |
+The installer and its wrappers live in `installer\` in this checkout - `installer\install.bat`,
+`installer\update.bat`, `installer\uninstall.bat`, `installer\status.bat`; the sections below use their
+short names.
 
 ### 4.1 The installer (Docker and native)
 
 ```text
-install.bat
+installer\install.bat
 ```
 
 With no arguments it assumes EveJS is installed on the machine it runs on, finds the root by itself
@@ -102,7 +104,7 @@ With no arguments it assumes EveJS is installed on the machine it runs on, finds
 ### 4.2 Docker
 
 ```text
-install.bat
+installer\install.bat
 docker compose build
 docker compose up -d --no-deps server
 ```
@@ -114,7 +116,7 @@ folder in.
 ### 4.3 Native (Windows)
 
 ```text
-install.bat
+installer\install.bat
 ```
 
 then restart the server with `StartServer.bat`. The installer **appends** to `NODE_OPTIONS` rather
@@ -122,7 +124,7 @@ than overwriting it, so a preload block another loader mod wrote is left intact.
 
 ### 4.4 EveJS Launcher
 
-Unpack the `-launcher.zip` into the launcher's mods folder - the archive root *is* the mod folder.
+The launcher wants the mod folder itself, with `evejs-launcher.mod.json` inside it: zip this folder with `AlternateMiningDrones\` as the archive root and hand that to the launcher.
 
 ### 4.5 Checking it worked
 
@@ -164,7 +166,7 @@ folder.
 ## 5. Updating and uninstalling
 
 ```text
-update.bat
+installer\update.bat
 ```
 
 `update.bat` is `install.bat` with an update label. It archives the folder it is about to replace
@@ -175,7 +177,7 @@ where the keys a later release introduced are added (with a `configVersion` stam
 already there is edited. There is no need to uninstall first.
 
 ```text
-uninstall.bat [--keep-files] [--keep-config] [--dry-run] [--docker-only | --native-only] [--server <path>]
+installer\uninstall.bat [--keep-files] [--keep-config] [--dry-run] [--docker-only | --native-only] [--server <path>]
 ```
 
 It removes the preload line and the mod folder, and archives the configuration files unless
