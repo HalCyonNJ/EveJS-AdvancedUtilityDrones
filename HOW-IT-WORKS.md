@@ -720,9 +720,8 @@ inserts those keys and a `configVersion` stamp, and never rewrites a value that 
 So `update.bat` still adds no second code path - it reports the version it moved from and to, and what
 it added to the configuration.
 
-The payload half is this folder minus `installer/`, `tools/`, `dist/`, `ANNOUNCEMENT.md` and
-`BuildPackage.bat` - see `DEV_ONLY_DIRECTORIES` / `DEV_ONLY_FILES` in `installer/lib/deployment.js`.
-`ANNOUNCEMENT.md` is the release note you post; an installed server has no use for it.
+The payload half is this folder minus `installer/`, `tools/`, `dist/` and `BuildPackage.bat` -
+see `DEV_ONLY_DIRECTORIES` / `DEV_ONLY_FILES` in `installer/lib/deployment.js`.
 
 `README.md` is in both archives (it documents the runtime behaviour, which an operator needs), while
 `HOW-IT-WORKS.md` rides along in the payload because it is the contract whoever maintains a fork has

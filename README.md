@@ -21,6 +21,30 @@ contract with the other server-side mods, and the invariants to preserve if you 
 per-character file, when the drones come home, and troubleshooting. [CHANGELOG.md](CHANGELOG.md)
 lists what each version changed.
 
+## At a glance
+
+Launch your mining or ice drones and they go to work on their own:
+
+- 🎯 the closest compatible rock inside your ship's drone control range - ore, ice and moon ore all work,
+- 🧊 ice harvesting drones take ice and leave your ore alone: each drone type only takes what it can actually mine,
+- 🪨 `spread` puts one drone per rock, and the closest rock still takes the leftovers once every other rock has a drone on it; `/atm focus` stacks them all on one rock instead,
+- 📦 hold full? the whole squadron recalls itself to the drone bay,
+- 🛡️ drone taking fire? the whole squadron comes home and stays home for two minutes,
+- 🖱️ ordered a drone somewhere by hand? it is left completely alone - only idle drones are ever touched.
+
+`/atm filter` turns that into a queue, one per kind of rock: an entry is a rock name or a type ID, the
+order typed is the order mined, `move` / `del` / `clear` edit it, and `grade on` takes the richest grade
+of a rock in range before the plainer ones. Every reply prints the queue as one numbered list per kind
+of rock, always by name, and a change reaches drones that are already mining within a second.
+
+The defaults are sensible: on, spread, follow the ship, recall on full hold, recall when shot, grade
+off, and nothing queued - the closest rock still gets mined. Settings live in
+`config/alternateMiningDrones.json` (every key is documented in `config.example.json`), and every
+environment variable is in `.env.example`.
+
+Everything in this repository - `README.md`, `MANUAL.md`, `HOW-IT-WORKS.md` and `CHANGELOG.md` - is
+written to be read by a person or fed to an AI, so the mod can be understood and changed.
+
 ## Why the server has to do it
 
 In EVE the *client* decides which rock a mining drone mines. It sends
@@ -56,27 +80,27 @@ but the server can issue the order itself.
 
 ## Install
 
-Two archives ship in `dist/`. Take the one that matches how you install; you never need both:
+Get this folder into `<EveJS root>\mods\AlternateMiningDrones` - clone the repository, copy the
+folder, or take `Source code (zip)` from the release you want - and run the installer from inside it.
+The folder name matters: the preload points at `mods\AlternateMiningDrones`, so a GitHub archive that
+unpacks as `EveJS-AlternateMiningDrones-main` has to be renamed to that.
 
-| Archive | Use it when |
-|---|---|
-| `AlternateMiningDrones-1.3.0-EveJS-0.12.8.zip` | You install on the server yourself. `install.bat`, `update.bat`, `uninstall.bat`, `status.bat`, the installer `lib/`, and the `AlternateMiningDrones/` folder they copy into `mods/`. |
-| `AlternateMiningDrones-1.3.0-EveJS-0.12.8-launcher.zip` | You install through EveJS Launcher. The mod folder alone, at the ZIP root. |
+```text
+installer\install.bat      this checkout
+install.bat                the same file at a release package's root
+```
 
-Either way the mod folder lands in `<EveJS root>\mods\AlternateMiningDrones`, and the deployment you
-actually run - Docker or native - gets one preload line. (`BuildPackage.bat` and
-`tools/build-package.js` live in the development tree only; they are not part of either archive.)
+What it does is register the preload for the deployment you actually run - Docker or native - and
+nothing else. It is idempotent, it backs up every file it rewrites to
+`<EveJS root>\_alternateminingdrones-backup\<timestamp>\` first, and `installer\uninstall.bat` removes
+its own line and leaves the rest alone.
 
 ### Installer (native and Docker)
 
-```text
-install.bat
-```
-
-`install.bat` ships in the installer package beside this folder. Run it with no arguments and it
-assumes EveJS is installed on this computer, finds the root itself - beside the package, above it, and
-as a last resort on the local drives - and stops to ask if the machine holds more than one checkout.
-Use `--server "C:\path\to\EveJS"` only to override that search.
+Run the installer with no arguments and it assumes EveJS is installed on this computer,
+finds the root itself - beside this folder, above it, and as a last resort on the local
+drives - and stops to ask if the machine holds more than one checkout. Use
+`--server "C:\path\to\EveJS"` only to override that search.
 
 It copies this folder to `<EveJS root>\mods\AlternateMiningDrones` and registers the preload in every
 deployment it finds:
@@ -111,7 +135,8 @@ A healthy boot logs five lines:
 ### Updating
 
 ```text
-update.bat
+installer\update.bat       this checkout
+update.bat                 the same file at a release package's root
 ```
 
 A reinstall is already an upgrade: `copyPayload` never overwrites a local `.env`, and the two
@@ -129,7 +154,7 @@ value that is already in there is changed. Use `install.bat` if you prefer; both
 3. `docker compose build && docker compose up -d --no-deps server`.
 
 No vendor file is patched, so uninstalling is: remove the two `--require` lines, delete the folder,
-rebuild. `uninstall.bat` does exactly that.
+rebuild. `installer\uninstall.bat` does exactly that.
 
 ## Configuration
 
@@ -176,7 +201,7 @@ adds a key a later release introduced. Nothing has to be set: the defaults alrea
 Every key inside an entry is optional, and anything a character does not set falls back to
 `config/alternateMiningDrones.json` - so an owner sets the house rules once and each player overrides
 only what they care about. The file is created by the installer and by the first boot, it is re-read
-within 5 s of a hand edit, it travels with the mod, and `uninstall.bat` removes it after archiving it
+within 5 s of a hand edit, it travels with the mod, and `installer\uninstall.bat` removes it after archiving it
 under `_alternateminingdrones-backup/`. `playersFile` puts it somewhere else.
 
 `/atm reset` deletes a character's entry and puts them back on the server defaults.

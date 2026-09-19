@@ -20,9 +20,9 @@ const REQUIRED_FILES = Object.freeze([
 // The installer prunes these from an already-installed folder and the packager
 // keeps them out of the payload, so one list governs both.
 const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "tools", "dist", "node_modules", ".git"]);
-// ANNOUNCEMENT.md is the release note the distributor posts; it is documentation
-// for whoever ships the mod, never a file the installed mod folder needs.
-const DEV_ONLY_FILES = Object.freeze(["ANNOUNCEMENT.md", "BuildPackage.bat"]);
+// BuildPackage.bat writes the release archives; it is a development tool, never a
+// file the installed mod folder needs.
+const DEV_ONLY_FILES = Object.freeze(["BuildPackage.bat"]);
 const DOCKER_ENTRYPOINT = path.join("docker", "entrypoint.sh");
 // The native entry point. Deliberately not server/package.json: that file is
 // an input to the image's dependency layer, so editing it forces npm ci to
