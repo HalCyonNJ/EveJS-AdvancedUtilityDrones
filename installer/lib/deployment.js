@@ -20,9 +20,11 @@ const REQUIRED_FILES = Object.freeze([
 // The installer prunes these from an already-installed folder, so an installed
 // mods\AdvancedUtilityDrones holds the payload and nothing else.
 const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "node_modules", ".git"]);
-// Development files at the mod root. The packaging step is gone (the GitHub
-// repository is the distribution), so nothing needs listing here today.
-const DEV_ONLY_FILES = Object.freeze([]);
+// Development files at the mod root: kept in the repository, never copied into
+// mods/AdvancedUtilityDrones. ANNOUNCEMENT.md holds the text that is pasted into
+// Discord, which is a publishing aid rather than something an installed mod
+// folder needs - and copyPayload also prunes these out of a target it refreshes.
+const DEV_ONLY_FILES = Object.freeze(["ANNOUNCEMENT.md"]);
 const DOCKER_ENTRYPOINT = path.join("docker", "entrypoint.sh");
 // The native entry point. Deliberately not server/package.json: that file is
 // an input to the image's dependency layer, so editing it forces npm ci to
