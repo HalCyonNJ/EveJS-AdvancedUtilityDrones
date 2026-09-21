@@ -134,33 +134,15 @@ nothing else. It is idempotent, it backs up every file it rewrites to
 `<EveJS root>\_advancedutilitydrones-backup\<timestamp>\` first, and `installer\uninstall.bat` removes
 its own line and leaves the rest alone.
 
-### Any other host: Linux, macOS, Docker
-
-The `.bat` files are a Windows convenience wrapped around one Node program, so nothing here needs
-Windows. On a Linux or macOS host, or on a Docker host with no Node installed at all, run the same
-installer directly, or in a throwaway container:
-
-```text
-node installer/install.js --server /path/to/EveJS
-
-docker run --rm --user "$(id -u):$(id -g)" \
-  -v /path/to/EveJS:/repo -w /repo/mods/AdvancedUtilityDrones \
-  node:20-alpine node installer/install.js --server /repo
-```
-
-`--server` takes any path, spaces and all, and the folder still lands in
-`<EveJS root>/mods/AdvancedUtilityDrones`. Updating and uninstalling are `installer/update.js` and
-`installer/uninstall.js` with the same options, and `--status` is `installer/install.js --status`.
-Running the installer from inside an already-installed `mods/AdvancedUtilityDrones` is supported - the
-folder the installer runs from is never pruned, so `update.js` and `uninstall.js` are still there
-afterwards.
-
 ### Installer (native and Docker)
 
 Run the installer with no arguments and it assumes EveJS is installed on this computer,
 finds the root itself - beside this folder, above it, and as a last resort on the local
 drives - and stops to ask if the machine holds more than one checkout. Use
-`--server "C:\path\to\EveJS"` only to override that search.
+`--server "C:\path\to\EveJS"` only to override that search, and updating and uninstalling take the
+same option (`installer\update.bat`, `installer\uninstall.bat`, `installer\status.bat`). Running the
+installer from inside an already-installed `mods\AdvancedUtilityDrones` is supported - the folder the
+installer runs from is never pruned, so `update.bat` and `uninstall.bat` are still there afterwards.
 
 It copies this folder to `<EveJS root>\mods\AdvancedUtilityDrones` and registers the preload in every
 deployment it finds:

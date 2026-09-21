@@ -107,7 +107,11 @@ installer\install.bat
 ```
 
 With no arguments it assumes EveJS is installed on the machine it runs on, finds the root by itself
-(it asks when more than one could match) and patches whichever entry point it finds.
+(it asks when more than one could match) and patches whichever entry point it finds. `--server` takes
+any path, spaces included, and the mod always lands in `<EveJS root>\mods\AdvancedUtilityDrones`.
+Running the installer from inside an already-installed `mods\AdvancedUtilityDrones` is supported: the
+folder it is run from is never pruned, so `update.bat` and `uninstall.bat` survive it and the next
+upgrade is one command.
 
 | Option | Meaning |
 |---|---|
@@ -141,37 +145,11 @@ installer\install.bat
 then restart the server with `StartServer.bat`. The installer **appends** to `NODE_OPTIONS` rather
 than overwriting it, so a preload block another loader mod wrote is left intact.
 
-### 4.4 Linux, macOS and Docker hosts
-
-The `.bat` wrappers only call the Node programs beside them, so on a Linux or macOS host - or on a
-Docker host with no Node at all - run those programs yourself:
-
-```text
-node installer/install.js --server /path/to/EveJS
-node installer/update.js --server /path/to/EveJS
-node installer/uninstall.js --server /path/to/EveJS
-node installer/install.js --status --server /path/to/EveJS
-```
-
-Nothing but Docker is needed for the container form, which mounts the checkout into a node:20-alpine
-image and runs the installer there:
-
-```text
-docker run --rm --user "$(id -u):$(id -g)" \
-  -v /path/to/EveJS:/repo -w /repo/mods/AdvancedUtilityDrones \
-  node:20-alpine node installer/install.js --server /repo
-```
-
-`--server` accepts any path, spaces included, and the mod is installed to
-`<EveJS root>/mods/AdvancedUtilityDrones` on every platform. Running the installer from inside an
-already-installed `mods/AdvancedUtilityDrones` is supported: the folder it is run from is never pruned,
-so `update.js` and `uninstall.js` survive it and the next upgrade is one command.
-
-### 4.5 EveJS Launcher
+### 4.4 EveJS Launcher
 
 The launcher wants the mod folder itself, with `evejs-launcher.mod.json` inside it: zip this folder with `AdvancedUtilityDrones\` as the archive root and hand that to the launcher.
 
-### 4.6 Checking it worked
+### 4.5 Checking it worked
 
 A healthy boot prints five lines. Search the server log for `advancedUtilityDrones`:
 
@@ -193,7 +171,7 @@ but appears in no chain. It also compares the installed folder with the package 
 hand-edited file, a folder left by an older release, or the copy inside a Docker image (where
 `.dockerignore` drops `**/.env`) all differ, and the line says so without blocking anything.
 
-### 4.7 What the installer changed
+### 4.6 What the installer changed
 
 - Copied the mod folder to `<EveJS root>/mods/AdvancedUtilityDrones`.
 - Added exactly one preload line (native: `NODE_OPTIONS` in `StartServer.bat`; Docker: the last

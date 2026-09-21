@@ -18,11 +18,11 @@ installed copy keeps its own manual.
 
 - EveJS 0.12.8 (native Windows install, or the Docker Compose project).
 - Node.js 18 or newer on `PATH` to run the installer.
-- The `.bat` files are wrappers around plain Node programs, so every other host runs them too:
-  `node installer/install.js --server /path/to/EveJS`, or, on a Docker host with no Node,
-  `docker run --rm --user "$(id -u):$(id -g)" -v /path/to/EveJS:/repo -w /repo/mods/AdvancedUtilityDrones node:20-alpine node installer/install.js --server /repo`.
-  `--server` takes any path, and running the installer from inside an installed
-  `mods/AdvancedUtilityDrones` is supported - the folder it is run from is never pruned.
+- Windows, for the `.bat` wrappers - `install.bat`, `update.bat`, `uninstall.bat`, `status.bat`.
+  `--server` takes any path, spaces included, and the mod always lands in
+  `<EveJS root>\mods\AdvancedUtilityDrones`. Running the installer from inside an installed
+  `mods\AdvancedUtilityDrones` is supported - the folder it is run from is never pruned, so the next
+  upgrade is still one command.
 
 ## Install
 

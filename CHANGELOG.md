@@ -34,10 +34,6 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
 
 ### Added
 
-- **The installer is documented for hosts that are not Windows.** A Linux, macOS or Docker-only host
-  runs `node installer/install.js --server <root>`, or that same command inside a momentary
-  `node:20-alpine` container when the host has no Node at all. The Windows wrappers are a shortcut,
-  not a requirement.
 - **Salvage-drone automation.** An idle salvage drone launched from a player ship now picks its own
   wreck inside the ship's drone control range, works it, and moves to the next one when it is empty -
   the same gap the mining half fills, for the same reason: `droneRuntime.commandSalvage` can pick a
