@@ -1,6 +1,11 @@
 # Local settings. .env.example is the documented template and is published.
 .env
 
+# The Discord posts, kept on this machine only - it is the paste buffer, not
+# something a reader of the repository or an installed mod folder needs. The
+# installer skips it too (DEV_ONLY_FILES in installer/lib/deployment.js).
+ANNOUNCEMENT.md
+
 # Installed dependencies
 node_modules/
 
