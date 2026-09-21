@@ -48,7 +48,6 @@ const KEYS = Object.freeze({
   salvageEnabled: `${PREFIX}_SALVAGE_ENABLED`,
   salvageTargetMode: `${PREFIX}_SALVAGE_TARGET_MODE`,
   salvageDistance: `${PREFIX}_SALVAGE_DISTANCE`,
-  salvageForeign: `${PREFIX}_SALVAGE_FOREIGN`,
 });
 
 // The names this mod answered to before it was renamed from Alternate Mining
@@ -113,7 +112,6 @@ const JSON_KEY_BY_ENV = Object.freeze({
   [KEYS.salvageEnabled]: "salvageEnabled",
   [KEYS.salvageTargetMode]: "salvageTargetMode",
   [KEYS.salvageDistance]: "salvageDistance",
-  [KEYS.salvageForeign]: "salvageForeign",
 });
 
 // What the mod does once the player has touched drones by hand: "hold" parks
@@ -131,15 +129,6 @@ const TARGET_MODE_FOCUS = "focus";
 // one, so a pilot clearing a belt from the far end can say so.
 const SALVAGE_DISTANCE_NEAREST = "nearest";
 const SALVAGE_DISTANCE_FARTHEST = "farthest";
-// Whose wrecks the salvage drones may work. "off" is own wrecks only, which is
-// what the game's own auto-salvage does; "warn" keeps that same own-wrecks rule
-// but names the foreign wreck in chat, once per launch, instead of passing it
-// over in silence; "allow" is the one setting that works another player's wreck,
-// and it does it silently. The safety light is a separate question and is warned
-// about whatever this is set to.
-const SALVAGE_FOREIGN_OFF = "off";
-const SALVAGE_FOREIGN_WARN = "warn";
-const SALVAGE_FOREIGN_ALLOW = "allow";
 
 // What the mod does when the player's "what to mine" filter matches nothing in range:
 // "any" mines the closest rock anyway, "idle" leaves the drones parked.
@@ -224,12 +213,10 @@ const DEFAULTS = Object.freeze({
   playersFile: "",
   chatTrigger: true,
   // Salvage drones off a launched hull pick their own wrecks, the same way the
-  // mining ones pick rocks. On by default, because with salvageForeign=off they
-  // only ever touch wrecks their own pilot owns.
+  // mining ones pick rocks. On by default.
   salvageEnabled: true,
   salvageTargetMode: TARGET_MODE_SPREAD,
   salvageDistance: SALVAGE_DISTANCE_NEAREST,
-  salvageForeign: SALVAGE_FOREIGN_OFF,
 });
 
 const LIMITS = Object.freeze({
@@ -535,13 +522,6 @@ function load(modDir, environment = process.env, options = {}) {
       KEYS.salvageDistance,
       problems,
     ),
-    salvageForeign: readChoice(
-      pick(KEYS.salvageForeign),
-      DEFAULTS.salvageForeign,
-      [SALVAGE_FOREIGN_OFF, SALVAGE_FOREIGN_WARN, SALVAGE_FOREIGN_ALLOW],
-      KEYS.salvageForeign,
-      problems,
-    ),
     playersFile: readText(pick(KEYS.playersFile), DEFAULTS.playersFile),
     playersFilename: resolvePath(
       readText(pick(KEYS.playersFile), DEFAULTS.playersFile),
@@ -576,9 +556,6 @@ module.exports = {
   RANGE_MODE_SHIP,
   SALVAGE_DISTANCE_FARTHEST,
   SALVAGE_DISTANCE_NEAREST,
-  SALVAGE_FOREIGN_ALLOW,
-  SALVAGE_FOREIGN_OFF,
-  SALVAGE_FOREIGN_WARN,
   TARGET_MODE_FOCUS,
   TARGET_MODE_SPREAD,
   load,

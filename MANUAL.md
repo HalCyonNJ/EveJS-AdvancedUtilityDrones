@@ -40,7 +40,7 @@ install on a player's machine**.
    !aud s status    - what the mod is doing for your salvagers right now
    !aud s list      - the wrecks around you, with the owner of each
    !aud s distance farthest   - work the field from the far end instead of the near one
-   !aud s foreign warn        - leave another pilot's wreck, and name it once per launch
+   !aud s d farthest          - any word may be shortened, so "d" is "distance"
    !aud s off       - back to fully manual salvaging
 ```
 
@@ -59,9 +59,9 @@ squadrons are separate switches.
 - Auto-targeting for **salvage drones** launched from a player ship: a wreck inside the same control
   range, worked until it is empty, then the next one.
 - `spread` (one rock or wreck per drone, default) and `focus` (every idle drone on the closest target).
-- For salvagers, which end of the field to start at (`/aud s distance nearest|farthest`) and whose
-  wrecks may be worked (`/aud s foreign off|warn|allow`). The game's own safety light and loot-rights
-  check still decide whether a wreck may be touched at all.
+- For salvagers, which end of the field to start at (`/aud s distance nearest|farthest`). Whose wreck
+  it was does not enter into it: stripping a hull moves no item, and it is taking the loot that carries
+  a suspect flag in this game, so every wreck inside the control radius is a target.
 - Auto-recall when the hold the material goes into cannot take one more whole unit, with a
   configurable margin (default 2 m3) so a nearly-full hold cannot turn into an idle/working flap.
 - Auto-recall when one of those drones takes fire - the whole squadron comes home and is not
@@ -236,7 +236,6 @@ file-only change.
 | `salvageEnabled` | `SALVAGE_ENABLED` | `true` | Master switch for the salvage drones. `false` leaves them fully manual. |
 | `salvageTargetMode` | `SALVAGE_TARGET_MODE` | `spread` | The salvage drones: `spread` = one wreck per drone; `focus` = the whole squadron on one wreck. |
 | `salvageDistance` | `SALVAGE_DISTANCE` | `nearest` | Which end of the wreck field the squadron starts at: `nearest` or `farthest`. |
-| `salvageForeign` | `SALVAGE_FOREIGN` | `off` | Whose wrecks may be worked: `off` your own only and silent, `warn` your own only too but a foreign wreck is named once per launch, `allow` a foreign wreck in silence. The game's safety light is checked either way. |
 | `claimPenaltyMeters` | `CLAIM_PENALTY_METERS` | `15000` | Distance penalty for a rock another drone of yours already has. |
 | `maxCandidates` | `MAX_CANDIDATES` | `48` | How many rocks a single scan scores. |
 | `filterScanLimit` | `FILTER_SCAN_LIMIT` | `512` | How many rocks a scan looks at while a "what to mine" filter is set. |
@@ -559,10 +558,13 @@ What that run shows:
   The numbers do not move: they stay the numbers `move` takes.
 - **`clear ice` and `del veldsparx` are the two ways to remove something.** `clear` empties a whole
   kind, `del` drops one entry, and both are printed back as names.
-- **Every help list is the same shape, and `f` is the filter's short spelling.** `/aud m help`
-  lists what follows `/aud m`; `/aud m f help` (the same as `/aud m filter help`) lists what follows
-  `/aud m filter`, one command per line, and `f` can replace the word `filter` in any command above.
-  `/aud s help` is the salvage menu's own list, and a bare `/aud` prints the two menus.
+- **Every help list is the same shape, and any word may be shortened.** `/aud m help` lists what
+  follows `/aud m`; `/aud m f help` (the same as `/aud m filter help`) lists what follows
+  `/aud m filter`, one command per line. A word can be cut down to the letters that still pick it out
+  on its own - `f` for `filter`, `sp` for `spread`, `st` for `status`, `d` for `distance` or
+  `reset` depending on the menu, `/aud m f ore clear` for `/aud m filter ore clear` - and a letter
+  two commands could take is answered with both of them instead of a guess. `/aud s help` is the
+  salvage menu's own list, and a bare `/aud` answers with one line per kind of drone.
 - **The sentence after `added` is the belt talking.** In space a change reply carries
   `Matching in range: Veldspar, Kernite, Blue Ice.` - up to four ore types within drone range that
   the new queue matches - so it is normal for it to be shorter or longer than the queue itself, and
@@ -572,7 +574,7 @@ What that run shows:
 ### 7.3 Copying a setup onto another character
 
 `!aud copy <name|id>` hands the **whole** saved setup of another character to the one who types it -
-both kinds of drone, with their switches, modes, distance and foreign policy, the whole queue, the
+both kinds of drone, with their switches, modes and distance, the whole queue, the
 hold threshold, the takeover rule and the range override - which is how a multibox fleet is made
 uniform one alt at a time.
 
@@ -607,7 +609,7 @@ AdvancedUtilityDrones: copied Example Alt (140000006) onto you.
   range      : follows your ship
   filter     : veldspar, kernite (fallback any)
   grade      : off
-  salvage    : ON (spread, nearest first, foreign off)
+  salvage    : ON (spread, nearest first)
   Drones already mining switch to the new queue within a second.
 
 > !aud copy exampel
@@ -619,50 +621,48 @@ AdvancedUtilityDrones: "exampel" fits more than one character - 140000005 (Examp
 reaches drones that are already mining within a second, like any other queue change.
 ### 7.4 The salvage menu (`/aud s`)
 
-Salvage drones work like miners, with one question the game asks about a wreck and never about a
-rock: **whose is it, and may you take from it?** This menu is the switches for that question. Nothing
-here is shared with the mining menu except the radius, the threshold and the takeover rule, which
-belong to the character.
+Salvage drones work like miners: an idle salvager launched from your ship picks its own target among
+the wrecks inside the ship's drone control range. Whose wreck it was is not a question this menu asks -
+stripping a hull moves no item, and in this game it is taking the loot that carries a suspect flag, not
+the hull - so the switches here are about how the field is worked rather than about who owns it.
+Nothing here is shared with the mining menu except the radius, the threshold and the takeover rule,
+which belong to the character.
 
 | Command | What it does |
 |---|---|
-| `status` | Salvage state: drones out (working / idle), wrecks in range split into yours, another pilot's and refused by your light, salvage assignments and recalls with the last reason, how many warnings have been printed, the hold the material goes into, your control range, and where your settings come from. |
+| `status` | Salvage state: drones out (working / idle), wrecks in range, salvage assignments and recalls with the last reason, the hold the material goes into, your control range, and where your settings come from. |
 | `on` / `off` | Turn automatic salvage on or off **for your character only**. This is not the mining switch: `/aud m off` leaves the salvagers working, and `/aud s off` leaves the miners working. |
 | `spread` / `focus` | One wreck per drone (default), or the whole squadron on the same wreck. |
 | `distance` | Which end of the field is worked first, and what it is set to now. |
 | `distance nearest` | (default) The closest wreck first. |
 | `distance farthest` | The furthest wreck first - what a long run through a field wants, so the squadron does not crawl back over ground it has already covered. |
-| `foreign` | Whose wrecks may be worked, and the current answer. |
-| `foreign off` | (default) Your own wrecks only. A wreck you are entitled to is yours: your own, a corporation or fleet member's, one that was abandoned, and any NPC wreck. |
-| `foreign warn` | A wreck you are not entitled to is left alone, and a warning line naming the wreck and its owner goes to local chat - **once per wreck per launch**, not once per drone and not once per tick. `warn` never flags you: it is `off` with a voice. |
-| `foreign allow` | A wreck you are not entitled to is worked, in silence - the one setting that can flag you. |
-| `list` | The wrecks around your ship, in the order the drones will work them: number, name, wreck ID, distance, whose it is and whether you may touch it. |
+| shorter spellings | Every command here answers to the letters that pick it out alone: `d` is `distance`, `sp` is `spread`, `st` is `status`, `c` is `control`, `t` is `threshold`. A letter two commands could take is answered with both of them. |
+| `list` | The wrecks around your ship, in the order the drones will work them: number, name, wreck ID, distance and whose it was. |
 | `range` / `range <meters>` / `range ship` | The same control radius as the mining menu - it belongs to the character, not to one kind of drone. |
 | `threshold <m3>` | The same margin, read against the cargo hold, which is where this server delivers drone salvage. |
 | `control hold\|recall\|off`, `resume` | The same manual-takeover rules as the mining menu. |
 | `reset` | Forget the salvage settings and follow the server defaults again. The mining switches stay. |
 | `help` | The list above. |
 
-**The safety light is not this mod's setting.** If the game's own crimewatch check refuses the wreck -
-a green light over someone else's wreck in *empire space*, which is high sec **and** low sec - the
-drone is not sent, and a warning line says so, once per wreck per launch. Set the light to yellow to
-work it, or wait for the owner to abandon the wreck. `foreign off|warn|allow` decides whether the mod
-*tries* at all, and only `allow` does: `off` passes a foreign wreck over without a word, `warn` names
-the one it passed over, and the light and the server's entitlement check decide the rest.
+**A wreck is a target whoever it belonged to.** The mod does not ask the game who owns a wreck before
+sending a drone, because the answer would not change anything: salvaging a hull is not a criminal act
+here - taking the loot is - so a wreck that belonged to another pilot is worked exactly like your own,
+and nothing is printed about it. The mod issues the same salvage call a player would, and anything the
+game makes of that call is the game's own answer rather than a policy of ours.
 
 ```text
 > !aud s list
 AdvancedUtilityDrones wrecks in range (120.0 km):
-  1. Wreck (4001) 8500 m - yours to take, no flag
-  2. Wreck (4002) 22.4 km - Another Pilot's, salvaging it flags you
-  3. Wreck (4003) 40.1 km - Another Pilot's, your safety light refuses it
+  1. Wreck (4001) 8500 m - Example Miner's
+  2. Wreck (4002) 22.4 km - Another Pilot's
+  3. Wreck (4003) 40.1 km - Another Pilot's
   work them with: "/aud s on"
 
-> !aud s foreign warn
-AdvancedUtilityDrones salvage foreign: warn (another pilot's wreck is left alone, and named once per launch).
+> !aud s d f
+AdvancedUtilityDrones salvage distance: farthest first.
 
 > !aud s on
-AdvancedUtilityDrones salvage ON for you (spread, nearest first). Salvage drones launched from your ship will pick their own wrecks.
+AdvancedUtilityDrones salvage ON for you (spread, farthest first). Salvage drones launched from your ship will pick their own wrecks.
 ```
 
 ## 8. Per-character settings
@@ -674,11 +674,11 @@ under `mining` and `salvage`, so a character can automate one and not the other:
 ```json
 {
   "_comment": "Per-character settings for AdvancedUtilityDrones. ...",
-  "_help": "mining.enabled: true|false ... salvage.foreign: off|warn|allow ...",
+  "_help": "mining.enabled: true|false ... salvage.distance: nearest|farthest ...",
   "characters": {
     "140000005": {
       "mining": { "targetMode": "focus", "oreFilter": ["veldspar", "kernite"] },
-      "salvage": { "enabled": true, "targetMode": "focus", "distance": "farthest", "foreign": "warn" },
+      "salvage": { "enabled": true, "targetMode": "focus", "distance": "farthest" },
       "minHoldFreeVolumeM3": 1,
       "playerControlPolicy": "hold",
       "updatedAt": "2026-09-21T04:12:03.118Z"
@@ -701,7 +701,6 @@ under `mining` and `salvage`, so a character can automate one and not the other:
 | `salvage.enabled` | `true` / `false` | Automate this character's salvage drones - a separate switch from `mining.enabled`. |
 | `salvage.targetMode` | `spread` / `focus` | One wreck per drone, or the whole squadron on one wreck. |
 | `salvage.distance` | `nearest` / `farthest` | Which end of the wreck field the squadron starts at. |
-| `salvage.foreign` | `off` / `warn` / `allow` | Whose wrecks may be worked; only `allow` works another pilot's wreck. The game's safety light is checked either way. |
 | `rangeOverrideMeters` | number / `null` | Search radius for this character; `null` follows the ship. Shared by both kinds. |
 | `minHoldFreeVolumeM3` | number | Room the destination hold must keep before the drones come home. Shared. |
 | `playerControlPolicy` | `hold` / `recall` / `off` | What a manual drone order means for the automation. Shared. |
@@ -780,8 +779,7 @@ threshold that stops the flap is about cargo room, not about the salvage hold th
 | The mod never started. | The log has no `[advancedUtilityDrones]` lines: the preload line is missing - re-run `install.bat`, or rebuild the Docker image. A line with `invalid-config` means a setting was rejected; fix it and restart. |
 | `!aud` gets no reply. | `chatTrigger: false` disables it; `allowPlayerToggle: false` disables everything except `status`, `list` and `help`. If the text shows up in the channel instead, the trigger is off and the line was broadcast as ordinary chat. |
 | Nothing happens after launching salvage drones. | `!aud s status`: is the salvage automation `ON` (it is a separate switch from mining), and does the character have drones out? Then check the server-wide `salvageEnabled`. Drones that are not salvage drones are not touched, and a wreck your light refuses is left alone - `!aud s list` says which wrecks are which. |
-| A salvage drone will not touch a wreck. | Read the verdict on `!aud s list`. `yours to take` means the game's entitlement check agrees with you; if the wreck is another pilot's, `salvageForeign` has to allow it *and* the safety light has to allow it. A green light over a foreign wreck in high sec or low sec means no. |
-| No warning line appeared for a foreign wreck. | The line is printed **once per wreck per launch**, so a squadron that was already sent to that wreck will not say it again. Relaunching the drones starts a fresh set of warnings. `foreign off` and `foreign allow` print nothing by design - only `warn` names a wreck it will not touch. |
+| A salvage drone will not touch a wreck. | `!aud s list` shows what is in range and how far it is. Nothing about the wreck's owner can hold a drone back - a wreck is a target in this mod. If a wreck is listed and no drone goes, the hold is the usual reason (see below), or the wreck is outside the control radius shown by `!aud s status`. |
 | Salvage drones sit idle. | Cargo is the deciding hold for salvage. `!aud s status` shows `hold state` and the hold line; if cargo is full or inside the margin they idle instead of working. |
 | Drones sit idle at a rock. | That is the recall condition: the destination bay cannot take a whole unit, or is inside the margin. `!aud m status` shows `hold state`. If `recallOnFullHold: false`, they idle instead of coming home. |
 | Drones will not come home when the bay is full. | Check `recallOnFullHold`, and check that nothing else is fighting over those drones. `control hold` plus your own manual order deliberately parks a drone. `maxStalledReassignments` is the backstop for the case the hold rules cannot see. |

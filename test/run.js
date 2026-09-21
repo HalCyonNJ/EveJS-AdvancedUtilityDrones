@@ -327,9 +327,9 @@ function makeWorld(options = {}) {
       },
       commandSalvage: (activeSession, droneIDs, targetID) => {
         calls.salvage.push({ session: activeSession, droneIDs, targetID });
-        // The drone is deliberately left idle and with no standing order: the
-        // tests that care about the per-launch warning list are about the list,
-        // not about the drone's own command suppressing a second attempt.
+        // The drone is deliberately left idle and with no standing order, so a
+        // test that ticks the same scene twice sees the second pass rather than
+        // the drone's own command quietly suppressing it.
         return { success: true };
       },
       commandReturnBay: (activeSession, droneIDs) => {
@@ -418,27 +418,10 @@ function makeWorld(options = {}) {
     getSalvagerRuntime: () => ({
       isSalvageableTarget: (entity) => Boolean(entity && entity.kind === "wreck"),
     }),
-    // The loot path's own question: may this pilot take from this wreck, and
-    // would taking it flag them? By default a wreck belongs to whoever owns it,
-    // and a wreck that is not the pilot's flags them - which is what makes
-    // \"foreign off\" the meaningful default. options.lootAccess replaces the
-    // whole answer, which is how the safety-light case is expressed.
-    getSpaceLootEntitlement: () => ({
-      readSpaceLootInfo: (customInfo) => (customInfo && customInfo.evejsLoot) || {},
-      evaluateSpaceLootAccess: (activeSession, source) => {
-        if (typeof options.lootAccess === "function") {
-          return options.lootAccess(activeSession, source);
-        }
-        const mine = Number(source && source.ownerID) === 7;
-        return {
-          success: true,
-          entitled: mine,
-          requiresSuspectTimer: !mine,
-        };
-      },
-    }),
-    // The warning line a salvage run prints goes into local chat; the test
-    // records it instead of broadcasting anything.
+    // Nothing a salvage run does goes into local chat any more: the warning it
+    // used to print belonged to the "whose wreck is it" switch, and that switch
+    // is gone. This records anything that tried to speak, which is meant to stay
+    // empty.
     getChatRuntime: () => ({
       broadcastLocalMessage: (activeSession, message) => {
         calls.warnings.push({ session: activeSession, message });
@@ -1323,7 +1306,7 @@ test("the plain-chat trigger only answers its own name, and only when it is enab
   const config = makeConfig();
   assert.equal(chatCommand.matchTrigger("!aud", config), "");
   assert.equal(chatCommand.matchTrigger("!aud m off", config), "m off");
-  assert.equal(chatCommand.matchTrigger("!aud s foreign warn", config), "s foreign warn");
+  assert.equal(chatCommand.matchTrigger("!aud s d farthest", config), "s d farthest");
   assert.equal(chatCommand.matchTrigger("!amd   spread", config), null,
     "the amd abbreviation is not this mod's spelling any more");
   assert.equal(chatCommand.matchTrigger("!/aud m status", config), null);
@@ -2236,7 +2219,7 @@ test("chat: f is the filter's short spelling", () => {
   assert.match(run("f fallback idle").message, /filter fallback: idle/);
   assert.match(run("f del pyroxeres").message, /dropped pyroxeres/);
   assert.match(run("f clear ore").message, /queue is now empty/);
-  assert.match(run("f bogus").message, /"\/aud m f" is the same command/);
+  assert.match(run("f bogus").message, /a, m, d, c, g or f if that is quicker/);
 
   // The short spelling is a filter verb, not a top-level command of its own:
   // "/aud m fallback" still means what it always did, and only "filter" grew one.
@@ -2552,7 +2535,7 @@ test("chat: the kind comes first, and the retired spellings only say so", () => 
 
   const redirected = chatCommand.handleCommand(runtime, config, world.session, "m ore veldspar");
   assert.match(redirected.message, /is a kind of rock, not a command/);
-  assert.match(redirected.message, /\/aud m filter clear ore/,
+  assert.match(redirected.message, /\/aud m f clear ore/,
     "the redirect names the command that still takes a kind word");
   assert.equal(/filter add ore/.test(redirected.message), false,
     "and not the spelling 1.2.9 stopped accepting");
@@ -2762,26 +2745,26 @@ test("chat: /aud m copy finds a character and hands their setup over", () => {
 // Salvage: another kind of drone, another set of wrecks
 // ---------------------------------------------------------------------------
 
-test("salvage: only the pilot's own wreck is worked, and the nearest one first", () => {
+test("salvage: a wreck is a target whoever it belonged to, nearest first", () => {
   const world = makeWorld({
     rocks: [],
     drones: salvageSquad(1),
     wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 5000, 99)],
   });
   const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
-  assert.equal(runtime.getSalvageState(7).foreign, "off",
-    "own wrecks only is the default, as the game's own auto-salvage is");
   runtime.onSceneTick(world.scene, 1000);
-  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001]);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4002],
+    "a stranger's wreck is worked like any other, and the near one wins");
   assert.equal(world.calls.warnings.length, 0,
-    "a wreck that is skipped in silence must not be announced");
+    "and nothing is announced: stripping a hull carries no flag in this game");
   assert.equal(world.calls.mine.length, 0, "no rock, no mining order");
 
-  // A nearer wreck of the pilot's own wins over a further one.
+  // Distance is the whole order: a farther wreck of the pilot's own does not
+  // jump the queue ahead of a nearer one that belongs to somebody else.
   const nearer = makeWorld({
     rocks: [],
     drones: salvageSquad(1),
-    wrecks: [makeWreck(4001, 30000, 7), makeWreck(4002, 5000, 7)],
+    wrecks: [makeWreck(4001, 30000, 7), makeWreck(4002, 5000, 99)],
   });
   const nearerRuntime = createRuntime({ config: makeConfig(), deps: nearer.deps });
   nearerRuntime.onSceneTick(nearer.scene, 1000);
@@ -2802,75 +2785,43 @@ test("salvage: distance farthest starts at the far end of the field", () => {
     "farthest first is for a pilot clearing a belt from the far end");
 });
 
-test("salvage: warn leaves another pilot's wreck alone and names it once per launch", () => {
+test("salvage: two drones take both halves of the field, one claim each", () => {
+  // Stripping a hull moves no item, so the question the loot path asks before a
+  // theft is not this mod's question and is never put to it: a wreck that the
+  // loot rules would refuse outright is salvaged exactly like the pilot's own.
   const world = makeWorld({
     rocks: [],
-    drones: salvageSquad(1),
-    wrecks: [makeWreck(4002, 5000, 99)],
+    drones: salvageSquad(2),
+    wrecks: [makeWreck(4001, 5000, 7), makeWreck(4002, 5001, 99)],
   });
   const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
-  runtime.setPlayerSalvageForeign(7, "warn");
   runtime.onSceneTick(world.scene, 1000);
-  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [],
-    "warn stops the drones, it does not just narrate them");
-  assert.equal(world.calls.warnings.length, 1);
-  assert.match(world.calls.warnings[0].message, /^AdvancedUtilityDrones warning: wreck 4002/);
-  assert.match(world.calls.warnings[0].message, /belongs to character 99/);
-  assert.match(world.calls.warnings[0].message, /leave other pilots' wrecks alone/);
-  assert.match(world.calls.warnings[0].message, /"\/aud s foreign allow"/);
-
-  // The same wreck on the next scan is not announced a second time: the warning
-  // is per launch, not per scan.
-  runtime.onSceneTick(world.scene, 2000);
-  assert.equal(world.calls.warnings.length, 1);
-  assert.equal(world.calls.salvage.length, 0, "and the wreck stays untouched");
-
-  // Launching them again is a fresh start, which is when the pilot is told
-  // again - the operator's own words: every time the drones go out.
-  runtime.resumeDrones(world.session, "salvage");
-  runtime.onSceneTick(world.scene, 3000);
-  assert.equal(world.calls.warnings.length, 2);
-
-  // "allow" is the one setting that works that wreck, and it does it without a word.
-  const quiet = makeWorld({
-    rocks: [],
-    drones: salvageSquad(1),
-    wrecks: [makeWreck(4002, 5000, 99)],
-  });
-  const quietRuntime = createRuntime({ config: makeConfig(), deps: quiet.deps });
-  quietRuntime.setPlayerSalvageForeign(7, "allow");
-  quietRuntime.onSceneTick(quiet.scene, 1000);
-  assert.deepEqual(quiet.calls.salvage.map((call) => call.targetID), [4002]);
-  assert.equal(quiet.calls.warnings.length, 0);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001, 4002],
+    "the first drone takes the near wreck, the second the stranger's");
+  assert.equal(world.calls.warnings.length, 0, "and no line is printed about either");
 });
 
-test("salvage: a wreck the safety light refuses is skipped, with a warning", () => {
+test("salvage: the cargo hold is the only hold a salvager is measured against", () => {
+  // No hull in this game data receives salvage anywhere but cargo, so a hull
+  // with an empty mining bay and a full cargo hold has to come home: watching
+  // the bay instead would keep the drones working forever.
   const world = makeWorld({
     rocks: [],
     drones: salvageSquad(1),
-    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 5000, 99)],
-    lootAccess: () => ({
-      success: false,
-      errorMsg: "SafetyActivated",
-      entitled: false,
-      requiresSuspectTimer: false,
-    }),
+    wrecks: [makeWreck(4001, 9000, 7)],
+    oreHoldCapacity: 1000,
+    cargoCapacity: 500,
+    containerItems: [{ flagID: CARGO_HOLD_FLAG, volume: 500, quantity: 1 }],
   });
   const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
-  runtime.setPlayerSalvageForeign(7, "allow");
   runtime.onSceneTick(world.scene, 1000);
-  assert.equal(world.calls.salvage.length, 0,
-    "a wreck the loot rules refuse is never sent a drone, whatever \"foreign\" says");
-  assert.equal(world.calls.warnings.length, 2, "one line per wreck, once");
-  assert.match(world.calls.warnings[0].message, /safety light will not allow/);
-  assert.match(world.calls.warnings[0].message, /Set the light to yellow/);
+  assert.deepEqual(world.calls.salvage, [],
+    "a full cargo hold stops the drones even with an empty mining bay");
+  assert.equal(world.calls.returnBay.length, 1, "and they are sent home");
 
-  // Still once per wreck per launch, not once per scan.
-  runtime.onSceneTick(world.scene, 2000);
-  assert.equal(world.calls.warnings.length, 2);
-  runtime.resumeDrones(world.session, "salvage");
-  runtime.onSceneTick(world.scene, 3000);
-  assert.equal(world.calls.warnings.length, 4);
+  const status = runtime.describeSalvageStatus(world.session);
+  assert.deepEqual(status.hold.bays.map((bay) => bay.flagID), [CARGO_HOLD_FLAG]);
+  assert.equal(status.hold.canAccept, false, "the hold the status reports on is cargo");
 });
 
 test("salvage: a hull that launches fifty drones puts every one of them to work", () => {
@@ -2933,7 +2884,6 @@ test("salvage: two hulls sharing a field do not count a wreck against each other
     ],
     wrecks: [makeWreck(4001, 10000, 7), makeWreck(4002, 20000, 7)],
     secondShip: { itemID: 1001, characterID: 8 },
-    lootAccess: () => ({ success: true, entitled: true, requiresSuspectTimer: false }),
   });
   const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
   runtime.onSceneTick(world.scene, 1000);
@@ -3007,12 +2957,12 @@ test("chat: the salvage menu is its own set of switches", () => {
   const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
 
   assert.match(run("s help").message, /the commands that follow \/aud s/);
-  assert.match(run("s help").message, /\/aud s foreign off\|warn\|allow/);
+  assert.match(run("s help").message, /\/aud s distance nearest\|farthest/);
   assert.match(run("s status").message, /AdvancedUtilityDrones v.* salvage/);
-  assert.match(run("s status").message, /foreign\s+: off/);
+  assert.match(run("s status").message, /wrecks\s+: 1 in range/);
   assert.match(run("s status").message, /cargo hold/);
   assert.match(run("s list").message, /wrecks in range/);
-  assert.match(run("s list").message, /\(4001\) .*yours to take, no flag/);
+  assert.match(run("s list").message, /\(4001\) .*character 7's/);
 
   assert.match(run("s off").message, /salvage OFF for you/);
   assert.equal(runtime.getSalvageState(7).enabled, false);
@@ -3029,10 +2979,14 @@ test("chat: the salvage menu is its own set of switches", () => {
   assert.match(run("s distance farthest").message, /distance: farthest first/);
   assert.match(run("s distance sideways").message, /must be "nearest" or "farthest"/);
 
-  assert.match(run("s foreign").message, /foreign: off/);
-  assert.match(run("s foreign warn").message, /foreign: warn/);
-  assert.match(run("s foreign off").message, /foreign: off/);
-  assert.match(run("s foreign sideways").message, /must be "off", "warn" or "allow"/);
+  // A letter is enough where one command owns it, and the whole word is spoken
+  // when two of them could take it.
+  assert.match(run("s d f").message, /distance: farthest first/);
+  assert.match(run("s d n").message, /distance: nearest first/);
+  assert.match(run("s d sideways").message, /must be "nearest" or "farthest"/);
+  assert.match(run("s sp").message, /salvage targeting mode: SPREAD/);
+  assert.match(run("s st").message, /AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("s o").message, /could be on or off/);
   assert.match(run("s bogus").message, /unknown option "bogus"/);
 
   // The shared commands answer from this menu too, and so does the whole-character
@@ -3040,10 +2994,11 @@ test("chat: the salvage menu is its own set of switches", () => {
   assert.match(run("s range 45000").message, /search radius set to 45\.0 km/);
   assert.match(run("s threshold 5").message, /threshold: 5 m3/);
   assert.match(run("s control recall").message, /takeover: RECALL/);
-  run("s foreign warn");
+  run("s d f");
+  assert.equal(runtime.getSalvageState(7).distance, "farthest");
   run("s reset");
   const afterReset = runtime.getSalvageState(7);
-  assert.equal(afterReset.foreign, "off", "the salvage keys are back on the defaults");
+  assert.equal(afterReset.distance, "nearest", "the salvage keys are back on the defaults");
   assert.equal(afterReset.targetMode, "spread");
   assert.equal(afterReset.rangeOverrideMeters, 45000,
     "the radius is shared, so a kind reset leaves it alone");
@@ -3089,15 +3044,14 @@ test("players: a 1.3.0 flat entry is read as the mining kind", () => {
   assert.equal(salvage.enabled, configModule.DEFAULTS.salvageEnabled);
   assert.equal(salvage.targetMode, configModule.DEFAULTS.salvageTargetMode);
   assert.equal(salvage.distance, "nearest");
-  assert.equal(salvage.foreign, "off");
   assert.equal(salvage.minHoldFreeVolumeM3, 7, "the threshold is shared");
   assert.equal(salvage.rangeOverrideMeters, 42000, "and so is the radius");
 
   // Writing one salvage key must not rewrite the mining half into the salvage
   // half, or drop either of them.
-  runtime.setPlayerSalvageForeign(7, "warn");
+  runtime.setPlayerSalvageDistance(7, "farthest");
   const written = JSON.parse(fs.readFileSync(store.file, "utf8")).characters["7"];
-  assert.equal(written.salvage.foreign, "warn");
+  assert.equal(written.salvage.distance, "farthest");
   assert.equal(written.mining.targetMode, "focus");
   assert.deepEqual(written.mining.oreFilter, ["veldspar"]);
   assert.equal(written.minHoldFreeVolumeM3, 7);

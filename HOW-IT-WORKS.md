@@ -29,17 +29,22 @@ of view nothing unusual happened: an order came in for a drone that was idle. Th
 trick, and it is why the client needs no change — it already renders whatever the server says the
 drone is doing.
 
-The two kinds stop being symmetric in exactly one place: a rock belongs to nobody and a wreck belongs
-to somebody. `commandSalvage` can choose a wreck on its own — `resolveAutomaticSalvageTarget`
+The two kinds are symmetric in the only place that matters: a wreck is a target, the same as a rock.
+`commandSalvage` can choose a wreck on its own — `resolveAutomaticSalvageTarget`
 (`droneRuntime.js:5411`, reached only from `commandSalvage` with a zero target) — but only ever an
-**owned** one, and only from a player's order. The mod asks the game's own loot-entitlement check
-(`server/src/services/_shared/spaceLootEntitlement.js`, `evaluateSpaceLootAccess`) about each wreck
-before it issues anything, so corporation and fleet loot rights, an abandoned wreck and an NPC wreck
-behave the way they behave everywhere else; what the safety light refuses is skipped with a warning.
+**owned** one, and only from a player's order, so the mod names the wreck explicitly instead and lets
+the same vendor command do the work.
+
+Nothing in that path asks who the wreck belonged to, and that is deliberate. `commandSalvage`
+never consults the loot-entitlement check (`server/src/services/_shared/spaceLootEntitlement.js`,
+`evaluateSpaceLootAccess`): what that check guards is the transfer of items, and in this game it is
+taking the loot that carries a suspect flag, not stripping the hull. A salvage drone therefore works a
+stranger's wreck exactly as a player's own manual salvage order would, and any consequence is the
+game's own rather than a policy of ours.
 
 Three further behaviours ride on the same pass: recall the ship's drones when the hold can no longer
-take one more unit, recall them when one of them takes damage, and print the warning line about
-somebody else's wreck once per wreck per launch.
+take one more unit, recall them when one of them takes damage, and go home when the squadron has no
+wreck left to work.
 
 - No file on disk is modified. No game client change. **Nothing to distribute to players.**
 - No GM or staff role is needed. Everything is per-character, or per-server configuration, and the
@@ -310,9 +315,8 @@ edits no file on disk - the seam is an exported function, not a source transform
 Two consequences are worth knowing:
 
 - The reply arrives as a system message in the channel, exactly as the `/aud` output does, so a
-  client renders both the same way. The **salvage warning** cannot use this path: a warning is printed
-  from a scene tick, not from a command, so `lib/runtime.js` sends it through
-  `chatRuntime.broadcastLocalMessage` directly - local chat, where a public suspect flag belongs.
+  client renders both the same way. A scene tick has no such seam and never replies: everything a
+  tick decides shows up as drone state the client already knows how to draw.
 - Leave the error's `code` unset. `password_required`, `invite_required`, `banned`, `muted` and the
   `*_mismatch` / `not_allowed` / `denied` codes are translated into their own text first, which would
   replace the reply.
@@ -519,18 +523,9 @@ warping check and the hold rule are the mining ones, reused. What differs is wha
 2. **Lists the wrecks** with `listSceneWrecks`: every entity the vendor's own
    `salvagerRuntime.isSalvageableTarget` accepts inside the resolved control range, sorted by surface
    distance.
-3. **Asks the game about each wreck once per pass** - `evaluateWreckAccess(session, scene, entity)`
-   wraps `spaceLootEntitlement.evaluateSpaceLootAccess` and answers `{ entitled, blocked,
-   requiresSuspectTimer }`. It is one call per *wreck*, not per drone: on a hull that launches fifty
-   drones the answer would be the same fifty times, and the check reaches into character, fleet and
-   crimewatch state.
-4. **Drops what this pilot may not have.** `blocked` - what the safety light refuses - is skipped and
-   warned about; a wreck that is not `entitled` is skipped as well, unless `salvageForeign` is
-   `allow`. Under `warn` that skip is the one the pilot is told about, once per wreck per launch.
-   Every rung of the ladder ends in the same place - no drone is sent to a wreck that is not this
-   pilot's - and `allow` is the only one that is different: it works the wreck and leaves the flag
-   to the game.
-5. **Scores what is left**:
+3. **Takes them all.** There is no ownership filter to apply: the list `listSceneWrecks` returned is
+   the list of targets, in the order the distance setting asks for.
+4. **Scores them**:
 
 ```text
 spread : score = (+/-)distance + (drones already sent to that wreck * claimPenaltyMeters)
@@ -540,19 +535,16 @@ focus  : score = (+/-)distance
    The sign is `/aud s distance`: `nearest` is the mining rule unchanged, `farthest` flips it so the
    field is worked from the far end. The penalty is the mechanism that spreads a mining flight out,
    reused - and the claims map is **per controller**, so two hulls sharing a field, or one pilot
-   running two of them, cannot count a wreck against each other. A wreck the pilot is *entitled* to
-   always beats one that would flag them, whatever the distance rule says.
-6. **Checks the hold** before each order, against the cargo hold, and recalls the whole squadron when
+   running two of them, cannot count a wreck against each other.
+5. **Checks the hold** before each order, against the cargo hold, and recalls the whole squadron when
    it is full (section 5).
-7. **Issues the order**: `droneRuntime.commandSalvage(session, [droneID], targetID)` with the target
-   named explicitly, so the vendor's owned-only automatic picker is not what decides; the entitlement
-   question above is the only one that was asked.
+6. **Issues the order**: `droneRuntime.commandSalvage(session, [droneID], targetID)` with the target
+   named explicitly, so it is this mod's choice of wreck that is worked and not the vendor's
+   owned-only automatic picker.
 
-**The warning is once per wreck per launch.** `salvageWarnedWrecks` is a per-character set, and
-`resumeDrones` clears a character's salvage warnings whenever salvage drones are launched again - the
-operator's own loop is fly in, launch, salvage, scoop, move on, launch again. A wreck goes into the
-set only *after* the line has been sent, so a warning that could not reach anybody yet is still
-printed the first time it can.
+**There is no ownership filter, and no warning.** A wreck that belonged to somebody else is worked
+without a word, because the flag in this game comes from taking the loot rather than from stripping
+the hull - a salvage pass moves no item, so there is nothing to warn about and nothing to gate on.
 
 **What a drone takes is the game's business.** The mod grants nothing: `salvagerRuntime.
 executeSalvagerCycle` decides what a cycle yields and where it lands, so loot rights, the salvage
@@ -691,8 +683,8 @@ two squadrons are separately switched:
 
 - `mining.enabled`, `mining.targetMode` (`spread` = one rock per drone), `mining.oreFilter`,
   `mining.filterFallback` and `mining.filterGrade` - what the mining drones do (3.1).
-- `salvage.enabled`, `salvage.targetMode` (`spread` = one wreck per drone), `salvage.distance` and
-  `salvage.foreign` - what the salvage drones do (3.3).
+- `salvage.enabled`, `salvage.targetMode` (`spread` = one wreck per drone) and
+  `salvage.distance` - what the salvage drones do (3.3).
 - `rangeOverrideMeters`, `minHoldFreeVolumeM3` and `playerControlPolicy` sit at the top level of the
   entry, because a radius, a hold margin and a takeover rule are not one kind's business -
   `minHoldFreeVolumeM3` is the room the destination hold must still keep before another unit is worth
@@ -749,10 +741,10 @@ Verified against the other server-side mods installed on this server:
    per-ship pass each have their own try/catch and log instead.
 6. **Never claim `NODE_OPTIONS` in the launcher.** Append, and let the installer place the block after
    every other writer - then re-run it after installing another mod that preloads. See 2.1.
-7. **Never skip the entitlement check before a salvage order.** `evaluateWreckAccess` is what keeps
-   this mod from making a suspect out of a player who never asked for one, and `salvageForeign` is the
-   only switch that may widen it. Issuing `commandSalvage` at a wreck the check refused is exactly the
-   bug the guard exists to prevent - the vendor function does not consult entitlement at all.
+7. **Never treat a wreck's owner as a reason to hold a drone back.** Salvaging a hull moves no item and
+   carries no flag in this game; it is taking the loot that does. The mod issues the same
+   `commandSalvage` a player's own order would and lets the game's answer stand, rather than inventing
+   an ownership policy the game does not have.
 8. **Never guess a drone's kind from a hard-coded type or name list.** The effect probe is what keeps
    third-party hulls working; a list would quietly leave their drones idle.
 9. **Keep the claims map per controller.** One map per scene would let two hulls in one belt starve
@@ -801,12 +793,11 @@ RunTests.bat      (or: node test/run.js)
 - **The two shapes of the command** — a bare `copy` answering with the examples and nothing else, the
   `copy list` roster with the caller marked, a roster narrowed by a name or by the `User:<id>` label
   the client shows, and a filter that matches nobody answering with the way back to the full list.
-- **Salvage** — only the pilot's own wreck worked and the nearest one first, `distance farthest`
-  flipping the order, a foreign wreck left alone and named once per launch (`warn`) or worked in
-  silence (`allow`), a wreck the safety light refuses skipped with its own warning, two hulls sharing a field
-  not counting a wreck against each other, the salvage menu being its own set of switches, a 1.3.0 flat
-  players entry read as the mining kind, and a hull that launches fifty drones putting every one of
-  them to work - for salvage and for mining alike.
+- **Salvage** — the nearest wreck worked first whatever it used to belong to, `distance farthest`
+  flipping the order, a full cargo hold stopping the squadron even with a mining bay standing empty,
+  two hulls sharing a field not counting a wreck against each other, the salvage menu being its own set
+  of switches, a 1.3.0 flat players entry read as the mining kind, and a hull that launches fifty
+  drones putting every one of them to work - for salvage and for mining alike.
 - **Drones that are not ours** — a third-party drone flown by the effect its type carries rather than
   by its name, for salvage and for ore, and a drone whose type carries neither effect left alone.
 - **The installer** — the entrypoint and `StartServer.bat` transforms, idempotency, byte-exact

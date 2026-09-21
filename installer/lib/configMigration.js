@@ -38,14 +38,16 @@ const RELEASES = Object.freeze([
   Object.freeze({ version: "1.2.9", added: Object.freeze(["filterGrade"]) }),
   Object.freeze({ version: "1.3.0", added: Object.freeze([]) }),
   // The rename to Advanced Utility Drones, and the first release that flies
-  // salvage drones: four keys, all of them about the salvage squadron.
+  // salvage drones: three keys, all of them about the salvage squadron. The
+  // version is unreleased, so its entry is still the release being written
+  // rather than a record of one that shipped - a key retired before the tag
+  // goes on simply never appears here.
   Object.freeze({
     version: "1.0.0-alpha",
     added: Object.freeze([
       "salvageEnabled",
       "salvageTargetMode",
       "salvageDistance",
-      "salvageForeign",
     ]),
   }),
 ]);

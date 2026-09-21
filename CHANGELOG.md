@@ -22,24 +22,25 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   wreck inside the ship's drone control range, works it, and moves to the next one when it is empty -
   the same gap the mining half fills, for the same reason: `droneRuntime.commandSalvage` can pick a
   wreck for a drone, but only ever an *owned* one and only from a player's own order.
-- **`/aud s foreign off|warn|allow`** - whose wrecks may be worked. `off` (the default) keeps the
-  squadron on the wrecks the game says are yours: your own, a corporation or fleet member's, an
-  abandoned wreck, an NPC wreck. `warn` keeps that same rule but stops being quiet about it: a
-  foreign wreck in range is left alone and named on one warning line **per wreck per launch**, with
-  the switch that would open it. `allow` is the one setting that works another pilot's wreck, and it
-  does it silently - which also makes it the one that can flag the pilot, so it is never the default.
-- **The safety light is respected, and it has the last word.** Every wreck is put to the game's own
-  loot-entitlement check (`spaceLootEntitlement.evaluateSpaceLootAccess`) before any order is issued.
-  A wreck that check refuses - a green light over somebody else's wreck in empire space, which is
-  high sec *and* low sec - is skipped and warned about once per launch, whatever `foreign` says.
+- **A wreck is a target, whoever it belonged to.** Nothing in the salvage path asks who owns a wreck,
+  because there is nothing for the answer to change: the game's loot-entitlement check guards the
+  transfer of items, and in this game it is taking the loot that carries a suspect flag, not stripping
+  the hull. The drones issue the same `commandSalvage` a player's own order would.
+- **`/aud` answers with two lines.** One for the mining drones and one for the salvage drones, and
+  nothing else: the kind of drone is the only thing that level has to say, and every menu opens one
+  word further in with `/aud m help` or `/aud s help`.
+- **Any word may be shortened to the letters that still pick it out alone.** `/aud m f ore clear` is
+  `/aud m filter ore clear`, `/aud m sp` is `/aud m spread`, `/aud s d farthest` is
+  `/aud s distance farthest`, and a filter verb is one letter (`a`, `m`, `d`, `c`, `g`, `f`).
+  Where two commands could take the same letters - `s` is the spread or the status - the answer names
+  both instead of guessing.
 - **`/aud s distance nearest|farthest`** - which end of the field the squadron starts at. `nearest`
   is the default; `farthest` is for a long run through a field, so the drones do not crawl back over
   ground they have already covered. **`/aud s spread|focus`** behaves as it does for miners.
 - **`/aud s list`** - the wrecks around the ship, in the order the drones will work them, each with
-  its owner and whether this pilot may touch it.
-- **`/aud s status`** - drones out, wrecks in range split into yours, another pilot's and refused by
-  your light, assignments and recalls with the last reason, warnings printed, and the hold the
-  material goes into.
+  the character it belonged to.
+- **`/aud s status`** - drones out, wrecks in range, assignments and recalls with the last reason,
+  and the hold the material goes into.
 - **Drones are classified by their effects, not by their names.** A type that resolves a salvage or a
   mining snapshot is flown; the name is only the fallback, and only it splits ore from ice. A
   third-party hull that launches fifty drones under its own type names puts every one of them to work
@@ -47,10 +48,20 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
 - **The claims map is per controller.** Two hulls sharing a field, or one pilot flying two of them, no
   longer count a wreck against each other. On a fifty-drone hull that is the difference between a
   whole squadron working and a handful working.
-- **Coverage for the salvage half**: own wreck only and nearest first, `farthest`, foreign `warn`
-  (left alone and named once per launch), foreign `allow` (worked in silence), the safety-light skip
-  and its warning, per-controller claims, the fifty-drone case for both kinds, effect-based
-  classification, and the salvage menu's own switches.
+- **Coverage for the salvage half**: the nearest wreck first whatever it used to belong to,
+  `distance farthest`, a full cargo hold stopping the squadron even with a mining bay standing empty,
+  per-controller claims, the fifty-drone case for both kinds, effect-based classification, and the
+  salvage menu's own switches.
+
+### Retired
+
+- **The `foreign` switch and its warning line are gone, and so is the ownership check behind them.**
+  A live test settled the question the switch was built on: salvaging another pilot's wreck does not
+  flag you on this server - taking the loot does. There is no suspect timer to warn about, so there is
+  nothing to gate on either, and the key was taken out of the file rather than left as a switch that
+  does nothing. `salvageForeign` is off the server-wide key list, `EVEJS_ADVANCED_UTILITY_DRONES_`
+  `SALVAGE_FOREIGN` is no longer read, and `foreign` is off the salvage menu; an older file that
+  still holds the key is read without complaint and the key simply has no effect.
 
 ### Renamed
 
@@ -58,16 +69,17 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   with it. The retired spellings - `/atm`, `/altmining`, `!atm`, `!altmining` - answer with one line
   naming the new commands instead of being ignored.
 - **The kind of drone comes first.** `/aud m ...` is the mining menu, `/aud s ...` is the salvage
-  menu, and a bare `/aud` prints both. A bare `/aud off` is refused with a pointer to the two
-  spellings, because "off" on its own would be ambiguous: the two squadrons are separate switches.
+  menu, and a bare `/aud` answers with one line per kind of drone and nothing else, so the menus open
+  one word further in. A bare `/aud off` is refused with a pointer to the two spellings, because "off"
+  on its own would be ambiguous: the two squadrons are separate switches.
 - `copy` and `reset` take no kind word: `/aud copy <name|id>` moves **both kinds** onto a character,
   and `/aud reset` clears both. The new `/aud m reset` and `/aud s reset` clear one kind each.
 - The per-character file is `config/advancedUtilityDrones.players.json`, and an entry keeps the two
   kinds side by side under `mining` and `salvage`. An entry written by 1.3.0 - flat `enabled`,
   `targetMode`, `oreFilter` - is still read and means the mining kind, so nothing needs editing by hand.
-- The server-wide keys for the new half are `salvageEnabled`, `salvageTargetMode`, `salvageDistance`
-  and `salvageForeign`, with `EVEJS_ADVANCED_UTILITY_DRONES_SALVAGE_*` as environment variables. All
-  four are in `config.example.json` and `.env.example`.
+- The server-wide keys for the new half are `salvageEnabled`, `salvageTargetMode` and
+  `salvageDistance`, with `EVEJS_ADVANCED_UTILITY_DRONES_SALVAGE_*` as environment variables. All
+  three are in `config.example.json` and `.env.example`.
 - Menus, help texts, replies and log lines all print the new name and the new commands.
 
 ### Notes for operators
@@ -80,10 +92,10 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
 - **The old environment spellings are still read.** `EVEJS_ALT_MINING_DRONES_*` works, and a value set
   under the new spelling wins when both are present, so an existing `compose.yaml` or `.env` keeps
   working while it is being renamed.
-- **Drone salvage is delivered into the cargo hold on this server.** The SDE gives a Noctis a
-  dedicated salvage hold, but the drone path grants into `ITEM_FLAGS.CARGO_HOLD` and its own space
-  check reads cargo, so the hold rule and `/aud s threshold` are about cargo space. The mod follows
-  the server rather than the SDE.
+- **Drone salvage is delivered into the cargo hold on this server.** The drone path grants into
+  `ITEM_FLAGS.CARGO_HOLD` and its own space check reads cargo, so no hull has a hold that receives
+  drone salvage anywhere else - there is no working salvage hold to watch, and the hold rule and
+  `/aud s threshold` are about cargo space and nothing else.
 - **There is no salvage filter in this release.** Every wreck in range is worked, in the order the
   distance setting asks for: nothing in a wreck can say what it is worth the way a rock's type does.
 - The test suite is 107 cases; `node test\run.js` (or `RunTests.bat`) runs them all.

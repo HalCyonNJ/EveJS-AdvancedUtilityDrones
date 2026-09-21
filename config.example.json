@@ -27,7 +27,6 @@
   "salvageEnabled": true,
   "salvageTargetMode": "spread",
   "salvageDistance": "nearest",
-  "salvageForeign": "off",
 
   "recallOnDamage": true,
   "damageThreshold": 0,
