@@ -525,8 +525,11 @@ warping check and the hold rule are the mining ones, reused. What differs is wha
    drones the answer would be the same fifty times, and the check reaches into character, fleet and
    crimewatch state.
 4. **Drops what this pilot may not have.** `blocked` - what the safety light refuses - is skipped and
-   warned about; a wreck that is not `entitled` is skipped unless `salvageForeign` opens it up, and
-   then `warn` prints the line.
+   warned about; a wreck that is not `entitled` is skipped as well, unless `salvageForeign` is
+   `allow`. Under `warn` that skip is the one the pilot is told about, once per wreck per launch.
+   Every rung of the ladder ends in the same place - no drone is sent to a wreck that is not this
+   pilot's - and `allow` is the only one that is different: it works the wreck and leaves the flag
+   to the game.
 5. **Scores what is left**:
 
 ```text
@@ -799,8 +802,8 @@ RunTests.bat      (or: node test/run.js)
   `copy list` roster with the caller marked, a roster narrowed by a name or by the `User:<id>` label
   the client shows, and a filter that matches nobody answering with the way back to the full list.
 - **Salvage** — only the pilot's own wreck worked and the nearest one first, `distance farthest`
-  flipping the order, a foreign wreck worked with one warning per launch (`warn`) and in silence
-  (`allow`), a wreck the safety light refuses skipped with its own warning, two hulls sharing a field
+  flipping the order, a foreign wreck left alone and named once per launch (`warn`) or worked in
+  silence (`allow`), a wreck the safety light refuses skipped with its own warning, two hulls sharing a field
   not counting a wreck against each other, the salvage menu being its own set of switches, a 1.3.0 flat
   players entry read as the mining kind, and a hull that launches fifty drones putting every one of
   them to work - for salvage and for mining alike.

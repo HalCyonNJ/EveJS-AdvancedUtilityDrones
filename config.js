@@ -132,9 +132,11 @@ const TARGET_MODE_FOCUS = "focus";
 const SALVAGE_DISTANCE_NEAREST = "nearest";
 const SALVAGE_DISTANCE_FARTHEST = "farthest";
 // Whose wrecks the salvage drones may work. "off" is own wrecks only, which is
-// what the game's own auto-salvage does; "warn" also works another player's
-// wreck but says so in chat first; "allow" does it silently. The safety light is
-// a separate question and is warned about whatever this is set to.
+// what the game's own auto-salvage does; "warn" keeps that same own-wrecks rule
+// but names the foreign wreck in chat, once per launch, instead of passing it
+// over in silence; "allow" is the one setting that works another player's wreck,
+// and it does it silently. The safety light is a separate question and is warned
+// about whatever this is set to.
 const SALVAGE_FOREIGN_OFF = "off";
 const SALVAGE_FOREIGN_WARN = "warn";
 const SALVAGE_FOREIGN_ALLOW = "allow";

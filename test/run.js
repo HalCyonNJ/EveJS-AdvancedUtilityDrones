@@ -2802,7 +2802,7 @@ test("salvage: distance farthest starts at the far end of the field", () => {
     "farthest first is for a pilot clearing a belt from the far end");
 });
 
-test("salvage: another pilot's wreck is worked, and warned about once per launch", () => {
+test("salvage: warn leaves another pilot's wreck alone and names it once per launch", () => {
   const world = makeWorld({
     rocks: [],
     drones: salvageSquad(1),
@@ -2811,18 +2811,19 @@ test("salvage: another pilot's wreck is worked, and warned about once per launch
   const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
   runtime.setPlayerSalvageForeign(7, "warn");
   runtime.onSceneTick(world.scene, 1000);
-  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4002]);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [],
+    "warn stops the drones, it does not just narrate them");
   assert.equal(world.calls.warnings.length, 1);
   assert.match(world.calls.warnings[0].message, /^AdvancedUtilityDrones warning: wreck 4002/);
   assert.match(world.calls.warnings[0].message, /belongs to character 99/);
-  assert.match(world.calls.warnings[0].message, /salvaging it makes you a suspect/);
-  assert.match(world.calls.warnings[0].message, /"\/aud s foreign off"/);
+  assert.match(world.calls.warnings[0].message, /leave other pilots' wrecks alone/);
+  assert.match(world.calls.warnings[0].message, /"\/aud s foreign allow"/);
 
   // The same wreck on the next scan is not announced a second time: the warning
   // is per launch, not per scan.
   runtime.onSceneTick(world.scene, 2000);
   assert.equal(world.calls.warnings.length, 1);
-  assert.equal(world.calls.salvage.length, 2, "the drones are still sent to work it");
+  assert.equal(world.calls.salvage.length, 0, "and the wreck stays untouched");
 
   // Launching them again is a fresh start, which is when the pilot is told
   // again - the operator's own words: every time the drones go out.
@@ -2830,7 +2831,7 @@ test("salvage: another pilot's wreck is worked, and warned about once per launch
   runtime.onSceneTick(world.scene, 3000);
   assert.equal(world.calls.warnings.length, 2);
 
-  // "allow" works the same wreck without a word.
+  // "allow" is the one setting that works that wreck, and it does it without a word.
   const quiet = makeWorld({
     rocks: [],
     drones: salvageSquad(1),

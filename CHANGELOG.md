@@ -24,8 +24,10 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   wreck for a drone, but only ever an *owned* one and only from a player's own order.
 - **`/aud s foreign off|warn|allow`** - whose wrecks may be worked. `off` (the default) keeps the
   squadron on the wrecks the game says are yours: your own, a corporation or fleet member's, an
-  abandoned wreck, an NPC wreck. `warn` works another pilot's wreck and prints a warning line naming
-  the wreck and its owner **once per wreck per launch**; `allow` does the same in silence.
+  abandoned wreck, an NPC wreck. `warn` keeps that same rule but stops being quiet about it: a
+  foreign wreck in range is left alone and named on one warning line **per wreck per launch**, with
+  the switch that would open it. `allow` is the one setting that works another pilot's wreck, and it
+  does it silently - which also makes it the one that can flag the pilot, so it is never the default.
 - **The safety light is respected, and it has the last word.** Every wreck is put to the game's own
   loot-entitlement check (`spaceLootEntitlement.evaluateSpaceLootAccess`) before any order is issued.
   A wreck that check refuses - a green light over somebody else's wreck in empire space, which is
@@ -45,9 +47,10 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
 - **The claims map is per controller.** Two hulls sharing a field, or one pilot flying two of them, no
   longer count a wreck against each other. On a fifty-drone hull that is the difference between a
   whole squadron working and a handful working.
-- **Coverage for the salvage half**: own wreck only and nearest first, `farthest`, foreign warn and
-  allow, the safety-light skip and its warning, per-controller claims, the fifty-drone case for both
-  kinds, effect-based classification, and the salvage menu's own switches.
+- **Coverage for the salvage half**: own wreck only and nearest first, `farthest`, foreign `warn`
+  (left alone and named once per launch), foreign `allow` (worked in silence), the safety-light skip
+  and its warning, per-controller claims, the fifty-drone case for both kinds, effect-based
+  classification, and the salvage menu's own switches.
 
 ### Renamed
 
