@@ -43,7 +43,7 @@ of rock, always by name, and a change reaches drones that are already mining wit
 Launch salvage drones over a wreck field and each one picks a wreck of its own:
 
 - 🔧 the nearest wreck first, or the far end of the field first with `/aud salvage distance farthest`,
-- 🧭 `/aud salvage spread` gives every drone its own wreck, `/aud salvage focus` puts the whole squadron on one,
+- 🧭 `/aud salvage target spread` gives every drone its own wreck, `/aud salvage target focus` puts the whole squadron on one,
 - 🔒 a wreck belongs to somebody, but stripping a hull is not what carries a flag in this game - taking the loot is - so the squadron works any wreck in range,
 - 📦 salvage material goes into the cargo hold - no hull here has a hold that receives it anywhere else - so that is the hold the rule watches,
 - 🖱️ a drone ordered by hand is left alone, exactly like a miner.
@@ -319,23 +319,27 @@ No GM or staff role is required - these are per-character, exactly like `/motd` 
 The command word is **`/aud`** and nothing else, and the **kind of drone comes first**: `/aud mining` is the
 mining menu and `/aud salvage` is the salvage menu, because the two squadrons are switched, tasked and tuned
 separately. A bare `/aud` answers with one line per kind of drone and nothing else, so the menus open
-one word further in; a bare `/aud off` is refused with a pointer to the two spelled-out forms.
+one word further in; `/aud help` is those two lines plus the whole-character commands, and a bare
+`/aud off` is refused with a pointer to the two spelled-out forms. `copy` and `clear` are the only
+commands that take no kind: they cover a character rather than a squadron.
 
 Every command has exactly two spellings and nothing else: the word, and one short form of two letters.
 There is no prefix guessing, because a letter that means one thing here and another thing in the mod next
 door is worse than a word that means nothing at all. So `/aud mining fl ore clear` is `/aud mining filter
-ore clear`, `/aud mining sp` is `/aud mining spread`, and `/aud salvage ds farthest` is `/aud salvage
-distance farthest`. What a command takes is always typed in full - `ore`, `nearest`, `hold`, a number, a
-name. `help` also answers to `h`, the one single letter left in the mod; there is no `?`.
+ore clear`, `/aud mining tg spread` is `/aud mining target spread`, and `/aud salvage ds farthest` is
+`/aud salvage distance farthest`. What a command *takes* is always typed in full as well - `spread`,
+`focus`, `ore`, `nearest`, `hold`, a number, a name. `help` also answers to `h`, the one single letter
+left in the mod; there is no `?`.
 
 | Command | Effect |
 |---|---|
-| `/aud` / `/aud help` | One line per kind of drone and nothing else. `/aud copy` and `/aud clear` cover a character rather than one kind, and are listed under either menu's help. |
+| `/aud` | One line per kind of drone, and nothing else. |
+| `/aud help` | The same two lines, plus the two commands that cover a whole character: `copy` and `clear`. |
 | `/aud mining help` | The mining commands in full, one line each. |
 | `/aud salvage help` | The salvage commands in full, one line each. |
 | `/aud mining status` | Mining state: drones in space/mining/idle, assignment and recall counters, and the resolved control range with its breakdown. |
 | `/aud mining on` / `off` | Turn automatic mining on or off for **your character only**. The salvage switch is a different switch. |
-| `/aud mining spread` / `focus` | The miners' targeting mode. |
+| `/aud mining target spread` / `focus` | The miners' targeting mode: one rock per drone, or the whole squadron on the closest rock. The same command on the salvage menu is `/aud salvage target`, with its own setting. |
 | `/aud mining range` | Show the control range and where each part of it comes from. |
 | `/aud mining range 120000` | Search radius override for your character, in meters. Two hulls with different fits need two radii. |
 | `/aud mining range ship` | Drop the override and follow your ship again. |
@@ -353,10 +357,10 @@ name. `help` also answers to `h`, the one single letter left in the mod; there i
 | `/aud mining clear` | Forget the mining settings and follow the server defaults again. The salvage switches stay. |
 | `/aud salvage status` | Salvage state: drones out, wrecks in range, salvage assignments and recalls with the last reason, and the hold the material goes into. |
 | `/aud salvage on` / `off` | Turn automatic salvage on or off for **your character only**, separately from mining. |
-| `/aud salvage spread` / `focus` | One wreck per drone, or the whole squadron on the same wreck. |
+| `/aud salvage target spread` / `focus` | One wreck per drone, or the whole squadron on the same wreck. The two kinds keep separate targeting settings. |
 | `/aud salvage distance` | Which end of the field is worked first. |
 | `/aud salvage distance nearest` / `farthest` | Start at the near end, or at the far one. |
-| shorter spellings | Every command has exactly two spellings: the word and one short form of two letters - `/aud mi fl ore clear`, `/aud mi sp`, `/aud sa ds farthest`. Nothing else is accepted, and nothing is guessed at. `help` is the one command that also answers to a single letter, `h`. |
+| shorter spellings | Every command has exactly two spellings: the word and one short form of two letters - `/aud mi fl ore clear`, `/aud mi tg spread`, `/aud sa ds farthest`. Nothing else is accepted, and nothing is guessed at. `help` is the one command that also answers to a single letter, `h`. |
 | `/aud salvage list` | The wrecks around your ship in the order the drones will work them, nearest first, each with the character it belonged to. |
 | `/aud salvage range`, `/aud salvage threshold`, `/aud salvage control`, `/aud salvage resume`, `/aud salvage clear` | The same shared switches as the mining menu - one radius, one hold threshold, one takeover rule per character, and a `clear` that empties the salvage half alone. |
 | `/aud copy` | How to search, and where the roster of stored characters is. |
@@ -364,8 +368,8 @@ name. `help` also answers to `h`, the one single letter left in the mod; there i
 | `/aud copy exampel` / `copy User:140000005` | Copy that character's whole setup - **both kinds of drone** - onto you. Part of a name is enough, and a name typed in the wrong order or one letter off still finds them. |
 | `/aud clear` | Delete your saved settings and follow the server defaults again, both kinds at once. |
 
-Every command has a two-letter short form - `filter` is `fl`, `spread` is `sp`, `help` is `h` - and
-nothing else is accepted. The old
+Every command has a two-letter short form - `filter` is `fl`, `target` is `tg`, `help` is `h` - and
+nothing else is accepted. `spread` and `focus` are values of `target`, not commands of their own. The old
 `/atm`, `/altmining`, `!atm` and `!altmining` spellings answer with a single line naming the new
 commands instead of doing anything. Setting `allowPlayerToggle: false` removes the per-character
 commands and leaves only the server defaults.

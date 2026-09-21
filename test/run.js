@@ -941,7 +941,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     const sent = [];
     const result = chatCommands.executeChatCommand(
       world.session,
-      "/aud mining focus",
+      "/aud mining target focus",
       { sendSystemMessage: (session, message) => sent.push(message) },
       {},
     );
@@ -954,7 +954,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     // error's message.
     const chatRuntime = require(chatRuntimePath);
     assert.throws(
-      () => chatRuntime.broadcastLocalMessage(world.session, "!aud spread"),
+      () => chatRuntime.broadcastLocalMessage(world.session, "!aud target spread"),
       (error) => /^AdvancedUtilityDrones/.test(error.message),
     );
     assert.equal(chatRuntime.calls.length, 0, "the trigger must never be broadcast");
@@ -1276,7 +1276,7 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // error.message back to the sender alone, so the line never reaches anybody
   // else. Throwing is the reply, not a failure.
   assert.throws(
-    () => upstream.broadcastLocalMessage(world.session, "!aud mining focus"),
+    () => upstream.broadcastLocalMessage(world.session, "!aud mining target focus"),
     (error) => /^AdvancedUtilityDrones/.test(error.message),
   );
   assert.equal(broadcast.length, 0, "the trigger must never be broadcast");
@@ -1365,6 +1365,12 @@ test("the chat overlay covers threshold, control and resume", () => {
   assert.match(status.message, /threshold\s*: 4 m3/);
   assert.match(status.message, /takeover\s*: recall/);
 
+  upstream.executeChatCommand(world.session, "/aud mining target focus", chatHub, {});
+  assert.equal(runtime.getPlayerState(7).targetMode, "focus");
+  assert.match(upstream.executeChatCommand(world.session, "/aud mining target", chatHub, {}).message,
+    /mining target: focus/);
+  assert.match(upstream.executeChatCommand(world.session, "/aud mi tg spread", chatHub, {}).message,
+    /targeting mode: SPREAD/);
   upstream.executeChatCommand(world.session, "/aud mining resume", chatHub, {});
 
   // "clear" inside a menu clears that kind and nothing else: the mining keys
@@ -1413,6 +1419,15 @@ test("the root takes two spellings and nothing shorter", () => {
   assert.match(root.message, /\/aud mining\|mi /);
   assert.match(root.message, /\/aud salvage\|sa /);
   assert.match(run("/aud h").message, /pick the drones to control/);
+
+  // Whole-character commands are not one kind's business: a bare "/aud" is the
+  // two menus, and "/aud help" is where copy and clear are named.
+  assert.equal(root.message.includes("/aud copy"), false);
+  assert.equal(root.message.includes("/aud clear"), false);
+  const rootHelp = run("/aud help").message;
+  assert.match(rootHelp, /\/aud copy\|cp <name\|id>/);
+  assert.match(rootHelp, /\/aud clear\|cl/);
+  assert.match(run("/aud h").message, /\/aud copy\|cp/);
 
   // One letter, or half a word, is nothing: the answer points at the two
   // spellings instead of guessing one.
@@ -2213,6 +2228,11 @@ test("chat: /aud mining help and /aud mining filter help are two lists", () => {
   assert.equal(top.includes("filter add"), false,
     "the filter's own commands no longer pad the top-level list");
   assert.equal(top.includes("filter grade"), false);
+  assert.equal(top.includes("/aud copy"), false,
+    "copy covers a whole character and is listed at the root, not here");
+  assert.match(top, /\/aud mining target spread\|focus/);
+  assert.match(chatCommand.handleCommand(runtime, config, world.session, "mining spread").message,
+    /is a targeting mode, not a command/);
 
   // "/aud mining filter help" carries them in the same shape as the list above: one
   // line per command, the line is what to type, and the detail lines sit under
@@ -2690,7 +2710,7 @@ test("chat: /aud copy finds a character and hands their setup over", () => {
   const lead = { characterID: 8, characterName: "Fleet Lead" };
   const alt = { characterID: 7, characterName: "Alt Two" };
 
-  chatCommand.handleCommand(runtime, config, lead, "mining " + "focus");
+  chatCommand.handleCommand(runtime, config, lead, "mining " + "target focus");
   chatCommand.handleCommand(runtime, config, lead, "mining " + "threshold 3");
   chatCommand.handleCommand(runtime, config, lead, "mining " + "range 45000");
   chatCommand.handleCommand(runtime, config, lead, "mining " + "filter add pyroxeres veldspar");
@@ -3013,9 +3033,12 @@ test("chat: the salvage menu is its own set of switches", () => {
   assert.match(run("on").message, /salvage ON for you/);
   assert.equal(runtime.getSalvageState(7).enabled, true);
 
-  assert.match(run("focus").message, /salvage targeting mode: FOCUS/);
+  assert.match(run("target").message, /salvage target: spread/);
+  assert.match(run("target focus").message, /salvage targeting mode: FOCUS/);
   assert.equal(runtime.getSalvageState(7).targetMode, "focus");
   assert.equal(runtime.getPlayerState(7).targetMode, "spread");
+  assert.match(run("target sideways").message, /must be "spread" or "focus"/);
+  assert.match(run("focus").message, /is a targeting mode, not a command/);
 
   assert.match(run("distance").message, /distance: nearest first/);
   assert.match(run("distance farthest").message, /distance: farthest first/);
@@ -3026,7 +3049,9 @@ test("chat: the salvage menu is its own set of switches", () => {
   assert.match(run("ds farthest").message, /distance: farthest first/);
   assert.match(run("ds nearest").message, /distance: nearest first/);
   assert.match(run("ds sideways").message, /must be "nearest" or "farthest"/);
-  assert.match(run("sp").message, /salvage targeting mode: SPREAD/);
+  assert.match(run("tg spread").message, /salvage targeting mode: SPREAD/);
+  assert.match(run("sp").message, /unknown option "sp"/);
+  assert.match(run("fo").message, /unknown option "fo"/);
   assert.match(run("st").message, /AdvancedUtilityDrones v.* salvage/);
   assert.match(run("d").message, /unknown option "d"/);
   assert.match(run("o").message, /unknown option "o"/);

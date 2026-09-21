@@ -286,16 +286,18 @@ Every command has exactly two spellings - its word and one short form of two let
 prefix guessing, because a letter that means one thing here and another thing in the mod next door is
 worse than a word that means nothing at all. The two kinds are `mining` / `mi` and `salvage` / `sa`, and
 `help` is the one command that also answers to a single letter, `h`. What a command *takes* is always
-typed in full, never shortened: `ore`, `nearest`, `hold`, a number, a name.
+typed in full, never shortened: `spread`, `focus`, `ore`, `nearest`, `hold`, a number, a name. `copy`
+and `clear` take no kind at all - they cover a character rather than a squadron - and are listed by
+`/aud help`.
 
-**The mining menu (`/aud mining`, short `/aud mi`)** - inside it `filter` is `fl`, `spread` is `sp`, and
+**The mining menu (`/aud mining`, short `/aud mi`)** - inside it `filter` is `fl`, `target` is `tg`, and
 so on down the list; `/aud mi fl add veldspar` is `/aud mining filter add veldspar`.
 
 | Command | What it does |
 |---|---|
 | `status` | Automation state, the drones you have out (mining / idle), assignment and recall counters with the last recall reason, the hold state, your control range with its breakdown, and where your settings come from. |
 | `on` / `off` | Turn automatic mining on or off **for your character only**. |
-| `spread` / `focus` | Your targeting mode: one rock per drone, or every idle drone on the closest rock. |
+| `target spread` / `focus` | Your targeting mode: one rock per drone, or every idle drone on the closest rock. `target` on its own prints what is set. |
 | `filter` | The queue: what is mined, in which order - one numbered list per kind of rock, then the fallback rule and the grade preference. |
 | `fl` | The short spelling of `filter`: `/aud mi fl add veldspar, kernite` queues those rocks, `/aud mi fl` prints the queue, and `/aud mi fl help` the filter's command list. |
 | `filter add veldspar, kernite, blue ice` | Queue those rocks; the order typed is the order mined. One entry per comma, and a name that holds a space stays one name (`filter add gneiss, dark ochre`). An entry is a rock name, part of one, or a type ID (`1231`); `add` takes no position, and a word that fits nothing - a number no rock has, or a name that is already queued - is passed over with a `warning` line while the rest of the line still goes in. An entry that is already queued keeps the place it has: `add` never reorders, `move` does. |
@@ -494,7 +496,7 @@ AdvancedUtilityDrones filter - the drones work down each list, first entry first
 
 `/aud mining fl help` is the same list as `/aud mining filter help`. Every help list is laid out the same way -
 one line per command, the line being what to type, with the detail lines indented under it. A bare
-`/aud` prints the two menus:
+`/aud` prints the two menus, and `/aud help` is those two lines plus the whole-character commands:
 
 ```text
 > !aud
@@ -502,10 +504,19 @@ AdvancedUtilityDrones v1.0.0-alpha - pick the drones to control:
   /aud mining|mi [command] - the mining drones; "/aud mi help" lists the rest
   /aud salvage|sa [command] - the salvage drones; "/aud sa help" lists the rest
 
+> !aud help
+AdvancedUtilityDrones v1.0.0-alpha - pick the drones to control:
+  /aud mining|mi [command] - the mining drones; "/aud mi help" lists the rest
+  /aud salvage|sa [command] - the salvage drones; "/aud sa help" lists the rest
+  /aud copy|cp <name|id> - take another character's whole setup onto you, both kinds
+      "/aud copy list" shows who has settings stored here, and a bare
+      "/aud copy" prints how to search
+  /aud clear|cl - forget your personal settings and follow the server defaults
+
 > !aud mining help
 AdvancedUtilityDrones v1.0.0-alpha - the commands that follow /aud mining:
   /aud mining on|off - enable or disable automatic mining for your character
-  /aud mining spread|focus - one rock per drone, or every drone on the closest rock
+  /aud mining target spread|focus - one rock per drone, or every drone on the closest rock
   /aud mining range [<meters|ship>] - show the search radius, or set it
   /aud mining threshold <m3> - come home once the chosen hold has less room than this
   /aud mining filter - show what to mine; "/aud mining filter help" lists the rest
@@ -516,13 +527,12 @@ AdvancedUtilityDrones v1.0.0-alpha - the commands that follow /aud mining:
   /aud mining status - show the current mining state
   /aud mining help - this list
   Every command has two spellings, and the short one is two letters: mining is
-      mi, and then mi on, mi off, mi sp, mi fo, mi rg, mi th, mi fl, mi ls,
-      mi ct, mi rs, mi cl, mi st, mi h. Nothing else is accepted, and what a
-      command takes is always typed in full - ore, ice, moon, ship, hold, recall
-      or off. "/aud mi sp" is "/aud mining spread".
-  "/aud copy <name|id>" takes a whole setup - both kinds - onto you, and
-  "/aud copy list" shows who has settings stored here; "/aud clear" clears
-  both kinds at once, where "/aud mining clear" clears the mining half alone
+      mi, and then mi on, mi off, mi tg, mi rg, mi th, mi fl, mi ls, mi ct,
+      mi rs, mi cl, mi st, mi h. Nothing else is accepted, and what a command
+      takes is always typed in full - spread, focus, ore, ice, moon, ship, hold,
+      recall or off. "/aud mi tg spread" is "/aud mining target spread".
+  "/aud mining clear" clears this kind alone; "/aud clear" clears both, and
+  "/aud help" lists the two commands that cover the whole character
 
 > !aud mining filter help
 AdvancedUtilityDrones v1.0.0-alpha - the commands that follow /aud mining filter:
@@ -568,7 +578,7 @@ What that run shows:
 - **Every help list is the same shape, and every command has two spellings.** `/aud mining help` lists
   what follows `/aud mining`; `/aud mining fl help` (the same as `/aud mining filter help`) lists what
   follows `/aud mining filter`, one command per line. A command answers to its word and to one short form
-  of two letters - `fl` for `filter`, `sp` for `spread`, `st` for `status`, `ds` for `distance` - and to
+  of two letters - `fl` for `filter`, `tg` for `target`, `st` for `status`, `ds` for `distance` - and to
   nothing else: there is no prefix guessing, and `help` is the only word that also answers to a single
   letter, `h`. `/aud salvage help` is the salvage menu's own list, and a bare `/aud` answers with one line
   per kind of drone.
@@ -639,11 +649,11 @@ which belong to the character.
 |---|---|
 | `status` | Salvage state: drones out (working / idle), wrecks in range, salvage assignments and recalls with the last reason, the hold the material goes into, your control range, and where your settings come from. |
 | `on` / `off` | Turn automatic salvage on or off **for your character only**. This is not the mining switch: `/aud mining off` leaves the salvagers working, and `/aud salvage off` leaves the miners working. |
-| `spread` / `focus` | One wreck per drone (default), or the whole squadron on the same wreck. |
+| `target spread` / `focus` | One wreck per drone (default), or the whole squadron on the same wreck. `target` on its own prints what is set. |
 | `distance` | Which end of the field is worked first, and what it is set to now. |
 | `distance nearest` | (default) The closest wreck first. |
 | `distance farthest` | The furthest wreck first - what a long run through a field wants, so the squadron does not crawl back over ground it has already covered. |
-| shorter spellings | Every command has two spellings, its word and a two-letter short form: `distance` is `ds`, `spread` is `sp`, `threshold` is `th`, `control` is `ct`, `resume` is `rs`, `status` is `st`, and `help` is `h`. Nothing else is accepted. |
+| shorter spellings | Every command has two spellings, its word and a two-letter short form: `target` is `tg`, `distance` is `ds`, `threshold` is `th`, `control` is `ct`, `resume` is `rs`, `status` is `st`, and `help` is `h`. Nothing else is accepted, and `spread` / `focus` are values, typed in full. |
 | `list` | The wrecks around your ship, in the order the drones will work them: number, name, wreck ID, distance and whose it was. |
 | `range` / `range <meters>` / `range ship` | The same control radius as the mining menu - it belongs to the character, not to one kind of drone. |
 | `threshold <m3>` | The same margin, read against the cargo hold, which is where this server delivers drone salvage. |

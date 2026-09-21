@@ -28,17 +28,18 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   the hull. The drones issue the same `commandSalvage` a player's own order would.
 - **`/aud` answers with the two menus.** One line for the mining drones and one for the salvage drones,
   and nothing else: the kind of drone is the only thing that level has to say, and every menu opens one
-  word further in with `/aud mi help` or `/aud sa help`.
+  word further in with `/aud mi help` or `/aud sa help`. `/aud help`, the same word as `h`, is those two
+  lines plus the whole-character commands - `copy` and `clear` - because neither belongs to one kind.
 - **Every command has exactly two spellings: its word, and one short form of two letters.** `mi` and
-  `sa` are the two kinds; inside a menu `sp` is `spread`, `fo` is `focus`, `rg` is `range`, `th` is
-  `threshold`, `fl` is `filter`, `ls` is `list`, `ct` is `control`, `rs` is `resume`, `cl` is `clear`
-  and `st` is `status`, `ds` is `distance` on the salvage menu, and a filter verb is two letters too
-  (`ad`, `mv`, `dl`, `cl`, `gd`, `fb`). `help` is the one word that also answers to a single letter, `h`.
-  What a command *takes* is always typed in full - `ore`, `nearest`, `hold`, a number, a name.
+  `sa` are the two kinds; inside a menu `tg` is `target`, `rg` is `range`, `th` is `threshold`, `fl` is
+  `filter`, `ls` is `list`, `ct` is `control`, `rs` is `resume`, `cl` is `clear` and `st` is `status`,
+  `ds` is `distance` on the salvage menu, and a filter verb is two letters too (`ad`, `mv`, `dl`, `cl`,
+  `gd`, `fb`). `help` is the one word that also answers to a single letter, `h`. What a command *takes*
+  is always typed in full - `spread`, `focus`, `ore`, `nearest`, `hold`, a number, a name.
 - **`/aud salvage distance nearest|farthest`** - which end of the field the squadron starts at. `nearest`
   is the default; `farthest` is for a long run through a field, so the drones do not crawl back over
-  ground they have already covered. **`/aud salvage spread|focus`**, or `/aud sa sp|fo`, behaves as it
-  does for miners.
+  ground they have already covered. **`/aud salvage target spread|focus`**, or `/aud sa tg spread`,
+  behaves as it does for miners.
 - **`/aud salvage list`** - the wrecks around the ship, in the order the drones will work them, each
   with the character it belonged to.
 - **`/aud salvage status`** - drones out, wrecks in range, assignments and recalls with the last
@@ -67,7 +68,13 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   reset` used to, and `resume` keeps its `rs` short form, so the two commands can no longer be read for
   one another.
 - **`copy` lives at the root only.** `/aud copy <name|id>` and `/aud copy list` are the whole of it,
-  and both are reached with `/aud cp ...`; there is no per-kind copy to learn.
+  and both are reached with `/aud cp ...`; there is no per-kind copy to learn, and no menu's help text
+  names it any more - `/aud help` is where it is listed.
+- **`spread` and `focus` became one command: `target`, short `tg`.** The two words were commands of
+  their own for one build, which read oddly beside `distance` - a switch that had already taken its
+  value. `/aud mining target spread|focus`, or `/aud mi tg focus`, sets the mode and `target` on its own
+  prints what is set; the values are typed in full like every other value. A line that types one where a
+  command belongs is answered with `target` instead of a bare refusal.
 
 ### Retired
 

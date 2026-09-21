@@ -271,10 +271,13 @@ paragraph naming every short form, so both spellings can be learnt in one place.
 `handleCommand` is a router and nothing else. The first word after `/aud` picks the menu — `mining`/`mi`
 for the miners, `salvage`/`sa` for the salvagers — and a bare `/aud` prints the root list rather than
 guessing a kind, because a bare `off` would be ambiguous: `/aud mining off` and `/aud salvage off` are two
-different switches. `copy` and `clear` sit outside the menus because they cover a whole character
-rather than one kind of drone. `lib/chatCommand.js` holds the whole grammar; the two menus share the
-helpers for the settings that belong to a character (radius, threshold, takeover), so neither menu
-owns them.
+different switches. `/aud help`, the same word as `h`, is that list plus the whole-character commands.
+`copy` and `clear` sit outside the menus because they cover a whole character rather than one kind of
+drone, and each of the four tables (`ROOT_WORDS`, `MINING_ACTIONS`, `SALVAGE_ACTIONS`, `FILTER_VERBS`)
+holds exactly two spellings per command — the word and one two-letter short form — so nothing is guessed
+at. `spread` and `focus` are not commands any more: they are the values of `target` / `tg`, typed in
+full. `lib/chatCommand.js` holds the whole grammar; the two menus share the helpers for the settings
+that belong to a character (radius, threshold, takeover), so neither menu owns them.
 
 Consumers destructure that export at load time (`slashService.js:15`, `lscService.js:11`,
 `xmppStubServer.js:27`), which is fine **because the overlay is installed when `chatCommands` is first
@@ -785,9 +788,12 @@ RunTests.bat      (or: node test/run.js)
 - **The two help lists** — `/aud mining help` carrying only the top-level commands and pointing at
   `/aud mining filter help`, which carries the filter's own commands in the same one-line-per-command
   shape, both readable with `allowPlayerToggle: false`, and `fl` answering wherever `filter` does.
+- **The root list and the menu lists** — a bare `/aud` staying at the two menus, `/aud help` naming
+  `copy` and `clear` as whole-character commands, and neither kind's list carrying them.
 - **The command tables** — the two kinds reached with `mi` and `sa`, the root `copy` / `clear` short
-  forms, `/aud h` as the one single letter left, and a bare `m`, `s` or half a word refused with a
-  pointer to the two spelled-out kinds rather than guessed at.
+  forms, `/aud h` as the one single letter left, `target` / `tg` setting the mode and printing it, and a
+  bare `m`, `s`, half a word or a `spread` typed as a command refused with a pointer to what does take
+  it rather than guessed at.
 - **The ore-name catalogue** — a rock's kind from its item group (ore, ice, moon, and a decorative
   asteroid left out), a type ID resolved the same way, the live mining state outranking the table,
   and an unreadable table leaving the reply ungrouped instead of wrong.
