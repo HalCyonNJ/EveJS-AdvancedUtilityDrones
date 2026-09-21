@@ -24,6 +24,13 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   the installer the operator was holding: `update.bat` and `uninstall.bat` were gone after the first
   run. A self-install is now recognised by real path and skipped whole, and the run reports
   `already in place` instead of claiming an update it did not make.
+- **An update rewrites the `configVersion` stamp instead of adding a second one.** A file written by the
+  `/atm` 1.3.0 line already names the release it was brought up to, and the migration put its own stamp
+  on a new line below that one rather than replacing it, so the file came out holding
+  `"configVersion"` twice - the superseded value first, the new one last. Parsers take the last, so
+  nothing behaved differently, but the raw text said two things and every upgrade from the old name
+  took that path. The line the file already has is now the line that is rewritten, the key order the
+  operator typed is left exactly as it was, and a file with no stamp at all still has one added.
 
 ### Added
 

@@ -12,9 +12,11 @@
  *
  * Two rules keep it safe:
  *
- *   - A value that is already in the file is never rewritten. The only thing
- *     this writes is whole lines for keys that are missing, just before the
- *     closing brace, plus the "configVersion" stamp.
+ *   - A value that is already in the file is never rewritten, with one
+ *     exception: the "configVersion" stamp, which is a fact about the file
+ *     rather than a setting, and whose own line is rewritten where it stands.
+ *     Everything else this writes is whole lines for keys that are missing,
+ *     just before the closing brace.
  *   - The key set and the values inserted come from the packaged
  *     config.example.json, so the defaults live in one place. This module only
  *     knows which release added which key, to be able to say what it moved from.
@@ -138,6 +140,27 @@ function insertLines(text, entries) {
   return lines.join(eol);
 }
 
+// One scalar on one line: everything JSON.stringify writes for a string, a
+// number, a boolean or null. A newline is not allowed inside any of them, so a
+// match can never reach past the end of the line it started on.
+const ONE_LINE_VALUE =
+  String.raw`"(?:[^"\\\n\r]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|true|false|null`;
+
+// Rewrites a value the file already holds, in place, keeping the line's own
+// indentation and the comma that is already on it. Returns null when the file
+// has no such line, or when its value is not one line - the key is then treated
+// as one that is missing, and insertLines gives it a line of its own.
+function stampValue(text, key, value) {
+  const pattern = new RegExp(
+    `^([ \t]*"${key}"[ \t]*:[ \t]*)(${ONE_LINE_VALUE})([ \t]*,?)[ \t]*$`,
+    "m",
+  );
+  if (!pattern.test(text)) {
+    return null;
+  }
+  return text.replace(pattern, (line, head, _old, tail) => `${head}${JSON.stringify(value)}${tail}`);
+}
+
 // What one run does with one file. options.exampleText is the packaged
 // config.example.json; without it nothing can be recognised and the file is
 // left alone.
@@ -157,14 +180,26 @@ function migrate(text, options = {}) {
   if (missing.length === 0 && stamped === CURRENT_VERSION) {
     return { changed: false, version: CURRENT_VERSION, from, added: [], missing: [] };
   }
+  // Missing keys arrive as whole new lines. The stamp is the one value that is
+  // rewritten instead: the file already carries the release it was brought up
+  // to, so that line is replaced where it stands. Appending a second
+  // "configVersion" would leave the old one in the raw text for anything that
+  // reads the file without parsing it, and an update has to stay a small diff.
   const entries = missing.map((key) => ({ key, value: example.value[key] }));
-  entries.push({ key: VERSION_KEY, value: CURRENT_VERSION });
-  const next = insertLines(text, entries);
+  let next = stampValue(text, VERSION_KEY, CURRENT_VERSION);
   if (next === null) {
-    return {
-      changed: false,
-      error: "the file does not end in a line holding the closing brace, so no key was added",
-    };
+    entries.push({ key: VERSION_KEY, value: CURRENT_VERSION });
+    next = text;
+  }
+  if (entries.length > 0) {
+    const inserted = insertLines(next, entries);
+    if (inserted === null) {
+      return {
+        changed: false,
+        error: "the file does not end in a line holding the closing brace, so no key was added",
+      };
+    }
+    next = inserted;
   }
   return {
     changed: true,

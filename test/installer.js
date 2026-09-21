@@ -1252,6 +1252,69 @@ function register(harness) {
       "a one-line object has no closing-brace line to insert whole keys before",
     );
   });
+
+  test("installer: an update rewrites the stamp it finds instead of adding a second one", () => {
+    const migration = require(path.join(installerDir, "lib", "configMigration.js"));
+    const exampleText = fs.readFileSync(path.join(modDir, "config.example.json"), "utf8");
+
+    // A file written by the 1.3.0 line: the release it was brought up to is the
+    // last entry. That line is a fact about the file, not a setting, so the one
+    // thing an update must not do is leave the old value behind in the text.
+    const old = [
+      "{",
+      '  "_comment": "hand written",',
+      '  "enabled": true,',
+      '  "targetMode": "focus",',
+      '  "configVersion": "1.3.0"',
+      "}",
+      "",
+    ].join("\n");
+    const result = migration.migrate(old, { exampleText });
+    assert.strictEqual(result.changed, true);
+    assert.strictEqual(
+      result.text.split('"configVersion"').length - 1,
+      1,
+      "the file carries one stamp, not two",
+    );
+    assert.strictEqual(result.text.includes('"1.3.0"'), false, "the superseded stamp is gone");
+    assert.strictEqual(JSON.parse(result.text).configVersion, "1.0.0");
+
+    // The stamp keeps the line it already had - same indent, and the comma the
+    // added block below it needs - so the order the operator typed is not
+    // reshuffled and no value in the file is moved around.
+    const lines = result.text.split("\n");
+    const stampAt = lines.indexOf('  "configVersion": "1.0.0",');
+    assert.ok(stampAt > -1, "the stamp stays on the line it was written on");
+    assert.ok(
+      stampAt < lines.indexOf('  "enabledByDefault": true,'),
+      "the added keys land below the stamp, not above it",
+    );
+    assert.strictEqual(JSON.parse(result.text).enabled, true, "no value is rewritten");
+    assert.strictEqual(JSON.parse(result.text).targetMode, "focus");
+
+    // The same file, stamped in the middle of the object instead of at the end.
+    const middle = ['{', '  "configVersion": "1.3.0",', '  "enabled": false', "}", ""].join("\n");
+    const moved = migration.migrate(middle, { exampleText });
+    assert.strictEqual(moved.text.split('"configVersion"').length - 1, 1);
+    assert.strictEqual(JSON.parse(moved.text).enabled, false);
+    assert.ok(moved.text.includes('  "configVersion": "1.0.0",'));
+
+    // A file with no stamp at all still gets one, and only one.
+    const bare = ['{', '  "_comment": "hand written"', "}", ""].join("\n");
+    const seeded = migration.migrate(bare, { exampleText });
+    assert.strictEqual(seeded.text.split('"configVersion"').length - 1, 1);
+    assert.strictEqual(JSON.parse(seeded.text).configVersion, "1.0.0");
+
+    // A file whose stamp is already this release but whose keys are not is still
+    // brought up, and a second pass over the result changes nothing.
+    assert.strictEqual(
+      migration.migrate(['{', '  "configVersion": "1.0.0"', "}", ""].join("\n"), { exampleText })
+        .changed,
+      true,
+      "the keys of this release are still missing from that file",
+    );
+    assert.strictEqual(migration.migrate(result.text, { exampleText }).changed, false);
+  });
 }
 
 module.exports = register;
