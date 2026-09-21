@@ -6,6 +6,11 @@
 # installer skips it too (DEV_ONLY_FILES in installer/lib/deployment.js).
 ANNOUNCEMENT.md
 
+# The Discord hand-out ZIP, built by tools/BuildPackage.bat. It stays on this
+# machine: the repository is the distribution, so nothing under dist/ is pushed
+# and nothing under it is ever attached to a Release.
+dist/
+
 # Installed dependencies
 node_modules/
 

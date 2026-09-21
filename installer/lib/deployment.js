@@ -18,8 +18,9 @@ const REQUIRED_FILES = Object.freeze([
 ]);
 // Everything under the mod root that belongs to the development checkout only.
 // The installer prunes these from an already-installed folder, so an installed
-// mods\AdvancedUtilityDrones holds the payload and nothing else.
-const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "node_modules", ".git"]);
+// mods\AdvancedUtilityDrones holds the payload and nothing else. tools/ is the
+// Discord packager and dist/ is what it writes; neither is part of the mod.
+const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "tools", "dist", "node_modules", ".git"]);
 // Development files at the mod root: never copied into mods/AdvancedUtilityDrones.
 // ANNOUNCEMENT.md holds the text that is pasted into Discord; it lives on the
 // author's machine only (git-ignored) and is listed here because the installer

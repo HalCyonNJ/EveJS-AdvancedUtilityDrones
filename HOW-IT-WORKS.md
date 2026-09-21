@@ -822,18 +822,24 @@ touched, which is why `RunTests.bat` is safe to run on a live box.
 ## 10. Packaging and distribution
 
 **Distribution is the GitHub repository.** `HalCyonNJ/EveJS-AdvancedUtilityDrones` *is* this folder, so
-the per-tag `Source code (zip)` GitHub generates is the release artifact: there is no local build step
-and no archive to keep, because the installer half and the payload are the same tree the user
-downloads. This replaced the old `BuildPackage.bat` / `node tools/build-package.js` step, which wrote
-two zips into `dist/` - an installer package (`install.bat` + `installer/lib/` + the payload inside
-`AdvancedUtilityDrones/`) and a launcher package (the payload folder alone). `dist/`, `BuildPackage.bat` and
-`tools/build-package.js` were all deleted on 2026-09-20, so there is no packaging step left to run.
+the per-tag `Source code (zip)` GitHub generates is the release artifact: the installer half and the
+payload are the same tree the user downloads, and there is nothing to keep in sync.
 
-What still matters is the pruning contract, which serves the installer alone: `installer/`, `node_modules/` and
-`.git/` are development-only and are listed in `DEV_ONLY_DIRECTORIES` in
+**The Discord hand-out is one extra ZIP, built locally and never published.** Some players would
+rather take a file from Discord than follow a link, so every release also gets
+`dist/AdvancedUtilityDrones-<version>.zip`, produced by `tools/BuildPackage.bat`
+(`node tools/build-package.js`): `git archive` of the release ref, prefixed with `AdvancedUtilityDrones/`,
+so it is the same content as the GitHub download. A player unzips it, drops the folder into `mods\` and
+runs `installer\install.bat`. The script refuses to run on a dirty working tree, reads the version out
+of `loader.js`, writes nothing but that one file, and prints its byte size, file count and sha256.
+`dist/` is git-ignored - the ZIP stays on the machine that builds it, is pasted into Discord, and is
+never pushed and never attached to a Release.
+
+What still matters is the pruning contract, which serves the installer alone: `installer/`, `tools/`,
+`dist/`, `node_modules/` and `.git/` are development-only and are listed in `DEV_ONLY_DIRECTORIES` in
 `installer/lib/deployment.js`, which is what keeps them out of an installed `mods/AdvancedUtilityDrones`.
-`DEV_ONLY_FILES` is empty now that the packaging tools are gone - if a development file ever appears at
-the mod root again, that is the list to put it in.
+`DEV_ONLY_FILES` is the list for a stray development *file* at the mod root - today that is
+`ANNOUNCEMENT.md`, the Discord copy that lives on the author's machine only.
 
 `update.js` is the same program as `install.js` with a different label: re-running the installer already
 archives the folder it is about to replace and re-applies the same idempotent registrations, and
