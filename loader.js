@@ -346,7 +346,7 @@ function install(options = {}) {
     `(loaded: ${players.stats().characters} character(s)); ` +
     (config.chatTrigger
       ? "the /aud command and the plain-chat !aud trigger work for every character " +
-        "(/aud m for the mining drones, /aud s for the salvage drones)"
+        "(/aud mining for the mining drones, /aud salvage for the salvage drones)"
       : "the plain-chat !aud trigger is switched off by configuration"),
   );
   return installState;

@@ -198,7 +198,7 @@ function playersFileBody(payload) {
       "Per-character settings for AdvancedUtilityDrones. The key is the character ID " +
       "and every key inside an entry is optional: anything a character does not set " +
       "falls back to " + CONFIG_DIRNAME + "/" + SERVER_CONFIG_FILE + ". Values set in " +
-      "game through /aud m or /aud s (or the plain-chat !aud trigger) are written " +
+      "game through /aud mining or /aud salvage (or the plain-chat !aud trigger) are written " +
       "here automatically.",
     _help:
       "enabled: true|false - automate this character's mining drones. " +

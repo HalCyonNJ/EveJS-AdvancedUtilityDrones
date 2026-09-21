@@ -263,15 +263,15 @@ the audit reports its line number so it can be moved above this block or switche
 `fourModeAsteroidBelts` installs `/beltmode` and `/beltvolume`: the previous function is captured, a
 new one replaces the exported property, and anything that is not an `/aud` message is handed
 `COMMANDS_HELP_TEXT` (a joined string, not an array — see `chatCommands.js:512-658`), so `/help`
-lists them — what is appended is the root list (the two menus), the commands that follow `/aud m`, and
-the filter's own list behind `/aud m filter help`, which keeps `/aud m help` to one screen. Every list
-is built the same way (one line per command, the line being what to type), and the filter answers to
-`f` as well as to its own name.
+lists them — what is appended is the root list (the two menus), the commands that follow `/aud mining`, and
+the filter's own list behind `/aud mining filter help`, which keeps `/aud mining help` to one screen. Every list
+is built the same way (one line per command, the line being what to type), and each menu ends with a
+paragraph naming every short form, so both spellings can be learnt in one place.
 
-`handleCommand` is a router and nothing else. The first word after `/aud` picks the menu — `m`/`mining`
-for the miners, `s`/`salvage` for the salvagers — and a bare `/aud` prints the root list rather than
-guessing a kind, because a bare `off` would be ambiguous: `/aud m off` and `/aud s off` are two
-different switches. `copy` and `reset` sit outside the menus because they cover a whole character
+`handleCommand` is a router and nothing else. The first word after `/aud` picks the menu — `mining`/`mi`
+for the miners, `salvage`/`sa` for the salvagers — and a bare `/aud` prints the root list rather than
+guessing a kind, because a bare `off` would be ambiguous: `/aud mining off` and `/aud salvage off` are two
+different switches. `copy` and `clear` sit outside the menus because they cover a whole character
 rather than one kind of drone. `lib/chatCommand.js` holds the whole grammar; the two menus share the
 helpers for the settings that belong to a character (radius, threshold, takeover), so neither menu
 owns them.
@@ -287,7 +287,7 @@ and each marks itself with its own `Symbol.for(...)` to stay idempotent.
 
 A line the player types without a leading `/` never reaches `executeChatCommand`. The client sends
 `/`-prefixed input as a `slash.SlashCmd` call (`slashService.js:211`; `slash-debug.log` records the raw
-line arriving as `command="/aud m focus"`), while anything else is an XMPP `groupchat` message.
+line arriving as `command="/aud mining focus"`), while anything else is an XMPP `groupchat` message.
 `xmppStubServer.handleGroupMessage` (`xmppStubServer.js:2727`) reads the body, and for a plain line it
 goes straight to `chatRuntime.broadcastLocalMessage(session, body)` (`chatRuntime.js:1702`) and then to
 `deliverRoomMessage(...)` - unconditionally, and without asking anything. So `!aud` cannot be
@@ -331,7 +331,7 @@ buckets the scene's drones by `controllerID`, and for each ship:
 1. **Keeps only mining drones** (`classifyMiningDroneKind`, see 1.1). A ship with none costs one
    `filter`.
 2. **Checks for damage first** (section 5). A recall beats any assignment.
-3. **Honours the player switch of that kind.** `/aud m off` stops the mining pass, `/aud s off` the
+3. **Honours the player switch of that kind.** `/aud mining off` stops the mining pass, `/aud salvage off` the
    salvage one; each pass reads its own switch.
 4. **Skips a warping ship** (`controllerEntity.mode === "WARP" || warpState`).
 5. **Keeps only idle drones**: no `droneCommand`, no `droneAssist`,
@@ -366,7 +366,7 @@ later tick, including the depleted-rock path that returns it to `STATE_IDLE`
 
 ### 3.1 The "what to mine" queue
 
-A player can narrow the pool further with `/aud m filter ...`; the choice is kept per character in the
+A player can narrow the pool further with `/aud mining filter ...`; the choice is kept per character in the
 players file, under `mining.oreFilter`. It is one more predicate on the candidate list, applied after
 the kind match and the range test, so nothing else in this chapter changes - a rock the queue does not
 want is simply never scored. **Salvage has no such queue**: there is no ore in a wreck to name, so the
@@ -427,7 +427,7 @@ only choices a salvager has are which end of the field to start at and whose wre
   empty bucket meaning that whole kind), which is how an upgrade keeps a queue that was set before
   1.2.3; `setPlayerOreFilter` normalizes through the same reader, so a hand-written or half-typed
   queue never reaches the file.
-- `/aud m filter` (short spelling `/aud m f`) takes four verbs - `add`, `move`, `del` and `clear` - plus the `grade` and `fallback`
+- `/aud mining filter` (short spelling `/aud mining fl`) takes four verbs - `add`, `move`, `del` and `clear` - plus the `grade` and `fallback`
   switches. `parseEdits(words, {positions})` pairs each name with the number that follows it, and
   only `move` reads positions; `add` ignores a number and joins the end of the queue.
   `oreQueue.placeTokens` puts each entry at that place inside the list of the kind it mines, lifting
@@ -450,7 +450,7 @@ only choices a salvager has are which end of the field to start at and whose wre
   for the pre-1.2.1 behaviour, where only idle drones follow the queue.
 - A queue widens the scan (`filterScanLimit`, default 512 rather than `maxCandidates`), because the
   nearest 48 rocks may all be ones the player does not want.
-- `describeSceneOres` backs `/aud m list`: it groups the candidates per type, sorts the queued types by
+- `describeSceneOres` backs `/aud mining list`: it groups the candidates per type, sorts the queued types by
   rank and the rest by distance, and prints the names a player can queue.
 - **Every reply that shows or changes the queue prints it as one numbered list per kind, and the
   kind comes from the game's own item types.** `lib/oreNames.js` builds a catalogue on first use out
@@ -488,7 +488,7 @@ whole queue, token for token - so the two are identical afterwards.
   every stored character, marks the caller as `(you)` and says that a character appears here once
   they have used any `/aud` command - which is what writes `characterName` into the entry.
 - **Only the players file can be a source**, so a character who never changed anything has nothing to
-  copy and the command says so - `/aud reset` is the deliberate way back to the server defaults.
+  copy and the command says so - `/aud clear` is the deliberate way back to the server defaults.
 - **The write is a replace, not a merge.** `playerSettings.replace()` (`lib/playerSettings.js`) drops
   the `updatedAt` / `characterName` / `_comment` metadata and stores what the source has as the
   target's whole entry, deleting the target's entry when nothing is left. That is the opposite of
@@ -505,7 +505,7 @@ whole queue, token for token - so the two are identical afterwards.
   never hide a match behind a truncation that counted other people's entries.
 - **Drones already mining follow the copy** for free: a copy is just another write to the players
   file, so `noteQueueSignature` (3.1) sees the new queue on the next pass and re-targets exactly as
-  it does after a `/aud m filter` command.
+  it does after a `/aud mining filter` command.
 - **Who may copy from whom.** The settings are not account-bound and not private - every entry lives
   in one server-side file - so copying from another player is allowed. `allowPlayerCopy: false` (env
   `EVEJS_ADVANCED_UTILITY_DRONES_ALLOW_PLAYER_COPY`) removes the command, and `allowPlayerToggle: false`
@@ -532,7 +532,7 @@ spread : score = (+/-)distance + (drones already sent to that wreck * claimPenal
 focus  : score = (+/-)distance
 ```
 
-   The sign is `/aud s distance`: `nearest` is the mining rule unchanged, `farthest` flips it so the
+   The sign is `/aud salvage distance`: `nearest` is the mining rule unchanged, `farthest` flips it so the
    field is worked from the far end. The penalty is the mechanism that spreads a mining flight out,
    reused - and the claims map is **per controller**, so two hulls sharing a field, or one pilot
    running two of them, cannot count a wreck against each other.
@@ -581,7 +581,7 @@ with the SDE ids as a fallback, so a future SDE rename degrades instead of break
 
 The result is cached on the ship entity as `advancedUtilityDronesRange` and invalidated by the dogma
 fingerprint, so a refit or a trained level takes effect on the next scan without a restart. It is then
-clamped to `rangeMinMeters..rangeMaxMeters`, and a per-character `/aud m range <meters>` override
+clamped to `rangeMinMeters..rangeMaxMeters`, and a per-character `/aud mining range <meters>` override
 takes precedence over it.
 
 `rangeMode: "fixed"` — or simply setting `rangeMeters` — skips all of the above and uses one number
@@ -758,7 +758,7 @@ Verified against the other server-side mods installed on this server:
 RunTests.bat      (or: node test/run.js)
 ```
 
-107 cases over ten areas:
+108 cases:
 
 - **Range arithmetic** — the 120 km Rorqual case, the 140 km implant case, the 20 km base, fixed mode.
 - **Target selection** — idle drones only, range culling, ore/ice separation, spread vs focus, a drone
@@ -782,9 +782,12 @@ RunTests.bat      (or: node test/run.js)
   a compressed prefix stripped), the richest rock of a family picked first with the preference on,
   the switch stored per character with `default` going back to the server setting, and the switch
   being part of the signature that re-tasks a drone that is already mining.
-- **The two help lists** — `/aud m help` carrying only the top-level commands and pointing at
-  `/aud m filter help`, which carries the filter's own commands in the same one-line-per-command
-  shape, both readable with `allowPlayerToggle: false`, and `f` answering wherever `filter` does.
+- **The two help lists** — `/aud mining help` carrying only the top-level commands and pointing at
+  `/aud mining filter help`, which carries the filter's own commands in the same one-line-per-command
+  shape, both readable with `allowPlayerToggle: false`, and `fl` answering wherever `filter` does.
+- **The command tables** — the two kinds reached with `mi` and `sa`, the root `copy` / `clear` short
+  forms, `/aud h` as the one single letter left, and a bare `m`, `s` or half a word refused with a
+  pointer to the two spelled-out kinds rather than guessed at.
 - **The ore-name catalogue** — a rock's kind from its item group (ore, ice, moon, and a decorative
   asteroid left out), a type ID resolved the same way, the live mining state outranking the table,
   and an unreadable table leaving the reply ungrouped instead of wrong.

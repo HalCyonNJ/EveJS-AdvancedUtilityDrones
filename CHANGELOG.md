@@ -26,21 +26,23 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   because there is nothing for the answer to change: the game's loot-entitlement check guards the
   transfer of items, and in this game it is taking the loot that carries a suspect flag, not stripping
   the hull. The drones issue the same `commandSalvage` a player's own order would.
-- **`/aud` answers with two lines.** One for the mining drones and one for the salvage drones, and
-  nothing else: the kind of drone is the only thing that level has to say, and every menu opens one
-  word further in with `/aud m help` or `/aud s help`.
-- **Any word may be shortened to the letters that still pick it out alone.** `/aud m f ore clear` is
-  `/aud m filter ore clear`, `/aud m sp` is `/aud m spread`, `/aud s d farthest` is
-  `/aud s distance farthest`, and a filter verb is one letter (`a`, `m`, `d`, `c`, `g`, `f`).
-  Where two commands could take the same letters - `s` is the spread or the status - the answer names
-  both instead of guessing.
-- **`/aud s distance nearest|farthest`** - which end of the field the squadron starts at. `nearest`
+- **`/aud` answers with the two menus.** One line for the mining drones and one for the salvage drones,
+  and nothing else: the kind of drone is the only thing that level has to say, and every menu opens one
+  word further in with `/aud mi help` or `/aud sa help`.
+- **Every command has exactly two spellings: its word, and one short form of two letters.** `mi` and
+  `sa` are the two kinds; inside a menu `sp` is `spread`, `fo` is `focus`, `rg` is `range`, `th` is
+  `threshold`, `fl` is `filter`, `ls` is `list`, `ct` is `control`, `rs` is `resume`, `cl` is `clear`
+  and `st` is `status`, `ds` is `distance` on the salvage menu, and a filter verb is two letters too
+  (`ad`, `mv`, `dl`, `cl`, `gd`, `fb`). `help` is the one word that also answers to a single letter, `h`.
+  What a command *takes* is always typed in full - `ore`, `nearest`, `hold`, a number, a name.
+- **`/aud salvage distance nearest|farthest`** - which end of the field the squadron starts at. `nearest`
   is the default; `farthest` is for a long run through a field, so the drones do not crawl back over
-  ground they have already covered. **`/aud s spread|focus`** behaves as it does for miners.
-- **`/aud s list`** - the wrecks around the ship, in the order the drones will work them, each with
-  the character it belonged to.
-- **`/aud s status`** - drones out, wrecks in range, assignments and recalls with the last reason,
-  and the hold the material goes into.
+  ground they have already covered. **`/aud salvage spread|focus`**, or `/aud sa sp|fo`, behaves as it
+  does for miners.
+- **`/aud salvage list`** - the wrecks around the ship, in the order the drones will work them, each
+  with the character it belonged to.
+- **`/aud salvage status`** - drones out, wrecks in range, assignments and recalls with the last
+  reason, and the hold the material goes into.
 - **Drones are classified by their effects, not by their names.** A type that resolves a salvage or a
   mining snapshot is flown; the name is only the fallback, and only it splits ore from ice. A
   third-party hull that launches fifty drones under its own type names puts every one of them to work
@@ -52,6 +54,20 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
   `distance farthest`, a full cargo hold stopping the squadron even with a mining bay standing empty,
   per-controller claims, the fifty-drone case for both kinds, effect-based classification, and the
   salvage menu's own switches.
+
+### Changed
+
+- **The short forms are two letters, and prefix guessing is gone.** The earlier build accepted any
+  prefix that still picked one command out, and answered a shared letter with both candidates; `s`
+  meaning the spread or the status, or the status or the salvage menu, is exactly the ambiguity a server
+  running several mods cannot afford, so each table now holds one word and one two-letter short form per
+  command and nothing else. `f` is no longer `filter` - `fl` is - and `?` is gone, though `help` still
+  answers to `h`.
+- **`reset` is `clear`.** `/aud clear`, `/aud mining clear` and `/aud salvage clear` do what `/aud
+  reset` used to, and `resume` keeps its `rs` short form, so the two commands can no longer be read for
+  one another.
+- **`copy` lives at the root only.** `/aud copy <name|id>` and `/aud copy list` are the whole of it,
+  and both are reached with `/aud cp ...`; there is no per-kind copy to learn.
 
 ### Retired
 
@@ -68,12 +84,14 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
 - **`AlternateMiningDrones` is `AdvancedUtilityDrones`, and `/atm` is `/aud`.** `/altmining` went
   with it. The retired spellings - `/atm`, `/altmining`, `!atm`, `!altmining` - answer with one line
   naming the new commands instead of being ignored.
-- **The kind of drone comes first.** `/aud m ...` is the mining menu, `/aud s ...` is the salvage
-  menu, and a bare `/aud` answers with one line per kind of drone and nothing else, so the menus open
-  one word further in. A bare `/aud off` is refused with a pointer to the two spellings, because "off"
-  on its own would be ambiguous: the two squadrons are separate switches.
-- `copy` and `reset` take no kind word: `/aud copy <name|id>` moves **both kinds** onto a character,
-  and `/aud reset` clears both. The new `/aud m reset` and `/aud s reset` clear one kind each.
+- **The kind of drone comes first.** `/aud mining ...` (short `mi`) is the mining menu, `/aud salvage ...`
+  (short `sa`) is the salvage menu, and a bare `/aud` answers with one line per kind of drone and nothing
+  else, so the menus open one word further in. A bare `/aud off` is refused with a pointer to the two
+  spellings, because "off" on its own would be ambiguous: the two squadrons are separate switches.
+- **The root commands cover a whole character and take no kind word.** `/aud copy <name|id>` (short `cp`)
+  moves **both kinds** onto a character, and `/aud clear` (short `cl`) clears both at once - the per-menu
+  copies are gone. `clear` replaced the old `reset` so it can no longer be mistaken for `resume`, and the
+  two kinds clear their own halves with `/aud mining clear` and `/aud salvage clear`.
 - The per-character file is `config/advancedUtilityDrones.players.json`, and an entry keeps the two
   kinds side by side under `mining` and `salvage`. An entry written by 1.3.0 - flat `enabled`,
   `targetMode`, `oreFilter` - is still read and means the mining kind, so nothing needs editing by hand.
@@ -95,10 +113,10 @@ because the rename makes this a different mod from the `/atm` 1.3.0 line - not a
 - **Drone salvage is delivered into the cargo hold on this server.** The drone path grants into
   `ITEM_FLAGS.CARGO_HOLD` and its own space check reads cargo, so no hull has a hold that receives
   drone salvage anywhere else - there is no working salvage hold to watch, and the hold rule and
-  `/aud s threshold` are about cargo space and nothing else.
+  `/aud salvage threshold` are about cargo space and nothing else.
 - **There is no salvage filter in this release.** Every wreck in range is worked, in the order the
   distance setting asks for: nothing in a wreck can say what it is worth the way a rock's type does.
-- The test suite is 107 cases; `node test\run.js` (or `RunTests.bat`) runs them all.
+- The test suite is 108 cases; `node test\run.js` (or `RunTests.bat`) runs them all.
 
 ---
 

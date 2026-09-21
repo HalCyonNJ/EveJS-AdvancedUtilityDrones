@@ -714,7 +714,7 @@ test("a player can switch automation off", () => {
   assert.equal(world.calls.mine.length, 0);
 });
 
-test("the chat overlay answers on /aud m and toggles the player state", () => {
+test("the chat overlay answers on /aud mining and toggles the player state", () => {
   const world = makeWorld({
     drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
   });
@@ -732,19 +732,19 @@ test("the chat overlay answers on /aud m and toggles the player state", () => {
     "the mod answers to one name now");
   assert.ok(!upstream.AVAILABLE_SLASH_COMMANDS.includes("advancedutilitydrones"),
     "the long spelling is gone");
-  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud m"));
-  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud s"),
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud mining"));
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud salvage"),
     "the client's /help lists both menus");
   const chatHub = {
     sendSystemMessage: (session, message) => sent.push(message),
   };
-  const off = upstream.executeChatCommand(world.session, "/aud m off", chatHub, {});
+  const off = upstream.executeChatCommand(world.session, "/aud mining off", chatHub, {});
   assert.equal(off.handled, true);
   assert.equal(sent.length, 1);
   assert.equal(runtime.playerStateSnapshot(7).enabled, false);
   const untouched = upstream.executeChatCommand(world.session, "/help", chatHub, {});
   assert.deepEqual(untouched, { handled: false });
-  const status = upstream.executeChatCommand(world.session, "/aud m status", chatHub, {});
+  const status = upstream.executeChatCommand(world.session, "/aud mining status", chatHub, {});
   assert.match(status.message, /AdvancedUtilityDrones v/);
 });
 
@@ -766,7 +766,7 @@ test("the chat overlay answers on the dot prefix used by non-staff clients", () 
   // to the player, so it has to survive this path.
   const viaChatBody = upstream.executeChatCommand(
     world.session,
-    ".aud m range",
+    ".aud mining range",
     null,
     { emitChatFeedback: false },
   );
@@ -775,7 +775,7 @@ test("the chat overlay answers on the dot prefix used by non-staff clients", () 
 
   const sent = [];
   const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
-  const on = upstream.executeChatCommand(world.session, ".aud m on", chatHub, {});
+  const on = upstream.executeChatCommand(world.session, ".aud mining on", chatHub, {});
   assert.equal(on.handled, true);
   assert.equal(sent.length, 1);
   assert.equal(runtime.playerStateSnapshot(7).enabled, true);
@@ -941,7 +941,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     const sent = [];
     const result = chatCommands.executeChatCommand(
       world.session,
-      "/aud m focus",
+      "/aud mining focus",
       { sendSystemMessage: (session, message) => sent.push(message) },
       {},
     );
@@ -1276,7 +1276,7 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // error.message back to the sender alone, so the line never reaches anybody
   // else. Throwing is the reply, not a failure.
   assert.throws(
-    () => upstream.broadcastLocalMessage(world.session, "!aud m focus"),
+    () => upstream.broadcastLocalMessage(world.session, "!aud mining focus"),
     (error) => /^AdvancedUtilityDrones/.test(error.message),
   );
   assert.equal(broadcast.length, 0, "the trigger must never be broadcast");
@@ -1305,19 +1305,19 @@ test("a plain chat line drives the mod so a character without staff rights can u
 test("the plain-chat trigger only answers its own name, and only when it is enabled", () => {
   const config = makeConfig();
   assert.equal(chatCommand.matchTrigger("!aud", config), "");
-  assert.equal(chatCommand.matchTrigger("!aud m off", config), "m off");
-  assert.equal(chatCommand.matchTrigger("!aud s d farthest", config), "s d farthest");
+  assert.equal(chatCommand.matchTrigger("!aud mining off", config), "mining off");
+  assert.equal(chatCommand.matchTrigger("!aud salvage d farthest", config), "salvage d farthest");
   assert.equal(chatCommand.matchTrigger("!amd   spread", config), null,
     "the amd abbreviation is not this mod's spelling any more");
-  assert.equal(chatCommand.matchTrigger("!/aud m status", config), null);
+  assert.equal(chatCommand.matchTrigger("!/aud mining status", config), null);
   assert.equal(chatCommand.matchTrigger("!hello there", config), null);
   // The retired names are matched so the rename notice can be printed, and the
   // name is kept in front of the reply so the router knows which one was typed.
   assert.equal(chatCommand.matchTrigger("!atm off", config), "atm off");
   assert.equal(chatCommand.matchTrigger("!altmining focus", config), "altmining focus");
   // A slash or dot line is the slash.SlashCmd path, and must not be consumed twice.
-  assert.equal(chatCommand.matchTrigger("/aud m status", config), null);
-  assert.equal(chatCommand.matchTrigger(".aud m status", config), null);
+  assert.equal(chatCommand.matchTrigger("/aud mining status", config), null);
+  assert.equal(chatCommand.matchTrigger(".aud mining status", config), null);
   assert.equal(
     chatCommand.matchTrigger("!aud on", makeConfig({ chatTrigger: false })),
     null,
@@ -1352,24 +1352,24 @@ test("the chat overlay covers threshold, control and resume", () => {
   const sent = [];
   const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
 
-  const removed = upstream.executeChatCommand(world.session, "/aud m hold all", chatHub, {});
+  const removed = upstream.executeChatCommand(world.session, "/aud mining hold all", chatHub, {});
   assert.match(removed.message, /unknown option "hold"/);
-  upstream.executeChatCommand(world.session, "/aud m threshold 4", chatHub, {});
-  upstream.executeChatCommand(world.session, "/aud m control recall", chatHub, {});
+  upstream.executeChatCommand(world.session, "/aud mining threshold 4", chatHub, {});
+  upstream.executeChatCommand(world.session, "/aud mining control recall", chatHub, {});
   const state = runtime.getPlayerState(7);
   assert.equal(state.minHoldFreeVolumeM3, 4);
   assert.equal(state.playerControlPolicy, "recall");
   assert.equal(state.holdStopMode, undefined);
 
-  const status = upstream.executeChatCommand(world.session, "/aud m status", chatHub, {});
+  const status = upstream.executeChatCommand(world.session, "/aud mining status", chatHub, {});
   assert.match(status.message, /threshold\s*: 4 m3/);
   assert.match(status.message, /takeover\s*: recall/);
 
-  upstream.executeChatCommand(world.session, "/aud m resume", chatHub, {});
+  upstream.executeChatCommand(world.session, "/aud mining resume", chatHub, {});
 
-  // "reset" inside a menu clears that kind and nothing else: the mining keys
+  // "clear" inside a menu clears that kind and nothing else: the mining keys
   // go, while the takeover setting the same menu set is shared and stays.
-  const reset = upstream.executeChatCommand(world.session, "/aud m reset", chatHub, {});
+  const reset = upstream.executeChatCommand(world.session, "/aud mining clear", chatHub, {});
   assert.equal(reset.handled, true);
   assert.match(reset.message, /the mining settings were cleared/);
   const afterKindReset = runtime.getPlayerState(7);
@@ -1379,16 +1379,56 @@ test("the chat overlay covers threshold, control and resume", () => {
   assert.equal(afterKindReset.source, "player",
     "the shared keys keep the entry alive");
 
-  // "/aud reset" is the one that clears the whole entry, shared keys and all.
-  const resetAll = upstream.executeChatCommand(world.session, "/aud reset", chatHub, {});
+  // "/aud clear" is the one that clears the whole entry, shared keys and all.
+  const resetAll = upstream.executeChatCommand(world.session, "/aud clear", chatHub, {});
   assert.equal(resetAll.handled, true);
   assert.match(resetAll.message, /all your personal settings were cleared/);
   assert.equal(runtime.getPlayerState(7).source, "config");
   assert.equal(runtime.getPlayerState(7).minHoldFreeVolumeM3, config.minHoldFreeVolumeM3,
-    "the shared threshold is only cleared by /aud reset");
+    "the shared threshold is only cleared by /aud clear");
   fs.rmSync(store.dir, { recursive: true, force: true });
 });
 
+test("the root takes two spellings and nothing shorter", () => {
+  const world = makeWorld();
+  const store = makePlayersFile("root-spellings");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps, players });
+  const upstream = { executeChatCommand: () => ({ handled: false }) };
+  chatCommand.install(upstream, { runtime, config });
+  const sent = [];
+  const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
+  const run = (line) => upstream.executeChatCommand(world.session, line, chatHub, {});
+
+  // A kind answers to its word and to its two-letter short form.
+  assert.match(run("/aud mining").message, /mining-capable/);
+  assert.match(run("/aud mi").message, /mining-capable/);
+  assert.match(run("/aud salvage").message, /salvage-capable/);
+  assert.match(run("/aud sa").message, /salvage-capable/);
+
+  // "/aud" and "/aud h" are the two menus and nothing else.
+  const root = run("/aud");
+  assert.match(root.message, /pick the drones to control/);
+  assert.match(root.message, /\/aud mining\|mi /);
+  assert.match(root.message, /\/aud salvage\|sa /);
+  assert.match(run("/aud h").message, /pick the drones to control/);
+
+  // One letter, or half a word, is nothing: the answer points at the two
+  // spellings instead of guessing one.
+  for (const line of ["/aud m", "/aud s", "/aud min", "/aud salv", "/aud c", "/aud clx"]) {
+    const refused = run(line);
+    assert.match(refused.message, /start with a kind of drone/, line);
+  }
+
+  // The root commands answer to their short forms as well.
+  upstream.executeChatCommand(world.session, "/aud mi th 4", chatHub, {});
+  assert.equal(runtime.getPlayerState(7).minHoldFreeVolumeM3, 4);
+  const cleared = run("/aud cl");
+  assert.match(cleared.message, /all your personal settings were cleared/);
+  assert.equal(runtime.getPlayerState(7).source, "config");
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
 // ---------------------------------------------------------------------------
 // What to mine: the ore/ice/moon filter
 // ---------------------------------------------------------------------------
@@ -1914,7 +1954,7 @@ test("chat: filter takes add, move, del and clear, and nothing else", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
   const queue = () => runtime.getPlayerState(7).oreFilter;
 
   // One command, one queue: the order typed is the order mined, printed per kind
@@ -1933,7 +1973,7 @@ test("chat: filter takes add, move, del and clear, and nothing else", () => {
   // of the line is queued and a warning line says what was passed over.
   const skipped = run("filter add 16262, ice, bitumens");
   assert.match(skipped.message, /\n +warning: "ice" names a whole kind of rock/);
-  assert.match(skipped.message, /\/aud m filter clear ice empties the ice list/);
+  assert.match(skipped.message, /\/aud mining filter clear ice empties the ice list/);
   assert.match(skipped.message, /\n {2}ice {4}: 1\. blue ice, 2\. Glacial Mass\n/,
     "an entry queued as a type ID reads back as the rock it stands for");
   assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens"]);
@@ -1944,7 +1984,7 @@ test("chat: filter takes add, move, del and clear, and nothing else", () => {
   const orphan = run("filter add veldspar, 1, pyroxeres, dark ochre");
   assert.match(orphan.message, /added dark ochre\./);
   assert.match(orphan.message, /warning: "1" is not a rock's type ID/);
-  assert.match(orphan.message, /\/aud m filter move <name> 1/);
+  assert.match(orphan.message, /\/aud mining filter move <name> 1/);
   assert.match(
     orphan.message,
     /warning: veldspar, pyroxeres are already in the queue and keep the place they have/,
@@ -2081,7 +2121,7 @@ test("chat: a rock whose name is two words stays one entry", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
   const queue = () => runtime.getPlayerState(7).oreFilter;
 
   // Typed without a comma, the words that name one rock stay together: this is
@@ -2122,12 +2162,12 @@ test("chat: the forms that left the grammar say what took their place", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
   // A kind word is no longer a way into the queue - "clear" is the command that
   // empties one kind's list, and the warning line says so.
   assert.match(run("filter add ice").message, /"ice" names a whole kind of rock/);
-  assert.match(run("filter del ice").message, /\/aud m filter clear ice empties the ice list/);
+  assert.match(run("filter del ice").message, /\/aud mining filter clear ice empties the ice list/);
   assert.match(run("filter add any").message, /"any" stands for every rock/);
   assert.match(run("filter add *").message, /"\*" stands for every rock/);
   assert.equal(runtime.getPlayerState(7).oreFilter, null, "none of those queued anything");
@@ -2144,7 +2184,7 @@ test("chat: the forms that left the grammar say what took their place", () => {
   assert.match(run("filter ice add veldspar").message, /is a kind of rock, not a command/);
 
   // The list of what is around you keeps a command of its own.
-  assert.match(run("filter list").message, /"\/aud m list" shows the rocks in range/);
+  assert.match(run("filter list").message, /"\/aud mining list" shows the rocks in range/);
 
   // Anything else says how to add a name instead of guessing at it.
   assert.match(run("filter veldspar").message, /filter takes add, move, del, clear, grade/);
@@ -2155,78 +2195,80 @@ test("chat: the forms that left the grammar say what took their place", () => {
   assert.match(shown.message, /nothing is queued/);
   assert.match(shown.message, /fallback: any/);
   assert.match(shown.message, /grade {3}: off/);
-  assert.match(shown.message, /commands: "\/aud m filter help"/);
+  assert.match(shown.message, /commands: "\/aud mining filter help"/);
 });
 
-test("chat: /aud m help and /aud m filter help are two lists", () => {
+test("chat: /aud mining help and /aud mining filter help are two lists", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
-  // The top-level list is the commands that follow "/aud m" and nothing else: it
+  // The top-level list is the commands that follow "/aud mining" and nothing else: it
   // points at the filter's own list instead of carrying it along.
   const top = run("help").message;
-  assert.match(top, /the commands that follow \/aud m/);
-  assert.match(top, /\/aud m filter help/);
-  assert.match(top, /"\/aud m f \.\.\." is the same as "\/aud m filter \.\.\."/,
-    "the top-level list names the filter's short spelling");
+  assert.match(top, /the commands that follow \/aud mining/);
+  assert.match(top, /\/aud mining filter help/);
+  assert.match(top, /mi fl, mi ls/, "the top-level list names the short spellings");
   assert.equal(top.includes("filter add"), false,
     "the filter's own commands no longer pad the top-level list");
   assert.equal(top.includes("filter grade"), false);
 
-  // "/aud m filter help" carries them in the same shape as the list above: one
+  // "/aud mining filter help" carries them in the same shape as the list above: one
   // line per command, the line is what to type, and the detail lines sit under
   // it indented by four spaces - no paragraphs.
   const filterHelp = run("filter help").message;
-  assert.match(filterHelp, /the commands that follow \/aud m filter/);
-  assert.match(filterHelp, /\n {2}\/aud m filter add <name\|id>/);
-  assert.match(filterHelp, /\n {2}\/aud m filter move <name\|id> <place>/);
-  assert.match(filterHelp, /\n {2}\/aud m filter del <name\|id>/);
-  assert.match(filterHelp, /\n {2}\/aud m filter clear ore\|ice\|moon/);
-  assert.match(filterHelp, /\n {2}\/aud m filter grade on\|off/);
-  assert.match(filterHelp, /\n {2}\/aud m filter fallback any\|idle/);
-  assert.match(filterHelp, /\n {2}\/aud m filter - show the queue/);
-  assert.match(filterHelp, /\n {2}\/aud m filter help - this list/);
-  assert.match(filterHelp, /\n {2}"\/aud m f <arguments>" is the same as/);
+  assert.match(filterHelp, /the commands that follow \/aud mining filter/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter add <name\|id>/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter move <name\|id> <place>/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter del <name\|id>/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter clear ore\|ice\|moon/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter grade on\|off/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter fallback any\|idle/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter - show the queue/);
+  assert.match(filterHelp, /\n {2}\/aud mining filter help - this list/);
+  assert.match(filterHelp, /\n {2}The short forms are two letters each: filter is fl/);
   const widest = filterHelp.split("\n").reduce((most, line) => Math.max(most, line.length), 0);
   assert.ok(widest <= 84, "the filter list stays as narrow as the top-level one (" + widest + ")");
   assert.equal(filterHelp.includes("first entry mined first:"), false,
     "the paragraph under \"add\" is gone");
 
   // Reading the queue still says where the list of commands is.
-  assert.match(run("filter").message, /\/aud m filter help/);
+  assert.match(run("filter").message, /\/aud mining filter help/);
 });
 
-test("chat: f is the filter's short spelling", () => {
+test("chat: fl is the filter's short spelling, and one letter is not", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
-  // "/aud m f" is "/aud m filter" under a shorter name: the queue read back, the
-  // same verbs, the same help, the same wording.
-  assert.equal(run("f").message, run("filter").message);
-  assert.equal(run("f help").message, run("filter help").message);
+  // "/aud mi fl" is "/aud mining filter" under a shorter name: the queue read
+  // back, the same verbs, the same help, the same wording.
+  assert.equal(run("fl").message, run("filter").message);
+  assert.equal(run("fl help").message, run("filter help").message);
 
-  const added = run("f add veldspar, pyroxeres");
+  const added = run("fl add veldspar, pyroxeres");
   assert.match(added.message, /added veldspar, pyroxeres\./);
   assert.match(added.message, /\n {2}ore {3}: 1\. veldspar, 2\. pyroxeres\n/);
-  assert.match(run("f").message, /1\. veldspar, 2\. pyroxeres/);
+  assert.match(run("fl").message, /1\. veldspar, 2\. pyroxeres/);
 
-  assert.match(run("f move pyroxeres 1").message, /\n {2}ore {3}: 1\. pyroxeres, 2\. veldspar\n/);
-  assert.match(run("f grade on").message, /filter grade: on/);
-  assert.match(run("f fallback idle").message, /filter fallback: idle/);
-  assert.match(run("f del pyroxeres").message, /dropped pyroxeres/);
-  assert.match(run("f clear ore").message, /queue is now empty/);
-  assert.match(run("f bogus").message, /a, m, d, c, g or f if that is quicker/);
+  assert.match(run("fl move pyroxeres 1").message, /\n {2}ore {3}: 1\. pyroxeres, 2\. veldspar\n/);
+  assert.match(run("fl grade on").message, /filter grade: on/);
+  assert.match(run("fl fallback idle").message, /filter fallback: idle/);
+  assert.match(run("fl del pyroxeres").message, /dropped pyroxeres/);
+  assert.match(run("fl clear ore").message, /queue is now empty/);
+  assert.match(run("fl bogus").message, /ad, mv, dl, cl, gd or fb/);
 
-  // The short spelling is a filter verb, not a top-level command of its own:
-  // "/aud m fallback" still means what it always did, and only "filter" grew one.
-  assert.match(run("fallback idle").message, /filter fallback: idle/);
-  assert.equal(chatCommand.matchCommand("/aud m f", config), "m f");
-  assert.equal(chatCommand.matchCommand("/aud m fallback", config), "m fallback");
-  assert.equal(chatCommand.matchCommand("/aud m fill", config), "m fill");
+  // Nothing shorter than the two letters is a command. "f" was the filter for
+  // one build and is gone: a word this mod does not own is never guessed at,
+  // because the same letter means something else in the next mod along.
+  assert.match(run("f").message, /unknown option "f"/);
+  assert.match(run("a veldspar").message, /unknown option "a"/);
+  assert.match(run("fallback idle").message, /unknown option "fallback"/,
+    "fallback lives under the filter and nowhere else");
+  assert.equal(chatCommand.matchCommand("/aud mining fl", config), "mining fl");
+  assert.equal(chatCommand.matchCommand("/aud mining f", config), "mining f");
 });
 
 test("chat: switching the grade preference re-tasks working drones", () => {
@@ -2291,7 +2333,7 @@ test("chat: every filter command prints the lists the numbers count in", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
   // One line per kind of rock, and the number restarts in every list, because
   // that is the number "move" takes.
@@ -2326,7 +2368,7 @@ test("chat: an entry that matches no rock gets a warning line", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
   const typo = run("filter add veldsparx");
   assert.match(
@@ -2352,7 +2394,7 @@ test("chat: move reorders with the same numbers the reply prints", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
   const queue = () => runtime.getPlayerState(7).oreFilter;
 
   run("filter add veldspar pyroxeres blue ice bitumens");
@@ -2462,7 +2504,7 @@ test("chat: the grade preference is per character and off unless asked for", () 
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
   assert.match(run("filter grade").message, /filter grade: off/);
   assert.match(run("filter grade on").message, /filter grade: on/);
@@ -2490,9 +2532,9 @@ test("chat: the kind comes first, and the retired spellings only say so", () => 
   const runtime = createRuntime({ config, deps: world.deps });
   // One name, two scopes: the kind is the first word after /aud, and the rest
   // of the line is that kind's menu, verbatim.
-  assert.equal(chatCommand.matchCommand("/aud m status", config), "m status");
+  assert.equal(chatCommand.matchCommand("/aud mining status", config), "mining status");
   assert.equal(chatCommand.matchCommand("!aud status", config), "status");
-  assert.equal(chatCommand.matchCommand("/aud s", config), "s");
+  assert.equal(chatCommand.matchCommand("/aud salvage", config), "salvage");
   assert.equal(chatCommand.matchTrigger("!aud filter ore clear", config), "filter ore clear");
 
   // A bare /aud is the two menus and nothing else: no kind is guessed, so a
@@ -2500,11 +2542,11 @@ test("chat: the kind comes first, and the retired spellings only say so", () => 
   assert.equal(chatCommand.matchCommand("/aud", config), "");
   const menu = chatCommand.handleCommand(runtime, config, world.session, "");
   assert.match(menu.message, /pick the drones to control/);
-  assert.match(menu.message, /\/aud m \[command\]/);
-  assert.match(menu.message, /\/aud s \[command\]/);
+  assert.match(menu.message, /\/aud mining\|mi \[command\]/);
+  assert.match(menu.message, /\/aud salvage\|sa \[command\]/);
   const ambiguous = chatCommand.handleCommand(runtime, config, world.session, "spread");
-  assert.match(ambiguous.message, /\/aud m spread\" for the mining drones/);
-  assert.match(ambiguous.message, /\/aud s spread\" for the salvage drones/);
+  assert.match(ambiguous.message, /\/aud mi spread\" for the mining drones/);
+  assert.match(ambiguous.message, /\/aud sa spread\" for the salvage drones/);
   assert.equal(runtime.getPlayerState(7).targetMode, "spread",
     "a verb with no kind changes nothing");
 
@@ -2528,20 +2570,20 @@ test("chat: the kind comes first, and the retired spellings only say so", () => 
   );
   const renamed = chatCommand.handleCommand(runtime, config, world.session, "atm off");
   assert.match(renamed.message, /was renamed/);
-  assert.match(renamed.message, /\/aud m/);
-  assert.match(renamed.message, /\/aud s/);
+  assert.match(renamed.message, /\/aud mining/);
+  assert.match(renamed.message, /\/aud salvage/);
   assert.equal(runtime.getPlayerState(7).enabled, true,
     "the retired spelling says its piece and does nothing else");
 
-  const redirected = chatCommand.handleCommand(runtime, config, world.session, "m ore veldspar");
+  const redirected = chatCommand.handleCommand(runtime, config, world.session, "mining ore veldspar");
   assert.match(redirected.message, /is a kind of rock, not a command/);
-  assert.match(redirected.message, /\/aud m f clear ore/,
+  assert.match(redirected.message, /\/aud mi fl clear ore/,
     "the redirect names the command that still takes a kind word");
   assert.equal(/filter add ore/.test(redirected.message), false,
     "and not the spelling 1.2.9 stopped accepting");
   assert.equal(runtime.getPlayerState(7).oreFilter, null, "the old form changes nothing");
 
-  const shown = chatCommand.handleCommand(runtime, config, world.session, "m filter ore");
+  const shown = chatCommand.handleCommand(runtime, config, world.session, "mining filter ore");
   assert.match(shown.message, /is a kind of rock, not a command/);
 });
 test("chat: fallback is per character and can go back to the server default", () => {
@@ -2550,14 +2592,14 @@ test("chat: fallback is per character and can go back to the server default", ()
   const runtime = createRuntime({ config, deps: world.deps });
   assert.equal(runtime.getPlayerState(7).filterFallback, "any");
 
-  const idle = chatCommand.handleCommand(runtime, config, world.session, "m " + "fallback idle");
+  const idle = chatCommand.handleCommand(runtime, config, world.session, "mining " + "filter fallback idle");
   assert.match(idle.message, /fallback: idle/);
   assert.equal(runtime.getPlayerState(7).filterFallback, "idle");
 
-  chatCommand.handleCommand(runtime, config, world.session, "m " + "filter fallback default");
+  chatCommand.handleCommand(runtime, config, world.session, "mining " + "filter fallback default");
   assert.equal(runtime.getPlayerState(7).filterFallback, "any");
 
-  const bad = chatCommand.handleCommand(runtime, config, world.session, "m " + "fallback sideways");
+  const bad = chatCommand.handleCommand(runtime, config, world.session, "mining " + "filter fallback sideways");
   assert.match(bad.message, /must be "any", "idle" or "default"/);
 });
 
@@ -2574,17 +2616,17 @@ test("chat: list names the ore around the ship, status shows the filter", () => 
   assert.match(status, /filter\s+: veldspar \(fallback any/u);
   assert.match(status, /2 of 3 rocks in range match/u);
 
-  const list = chatCommand.handleCommand(runtime, config, world.session, "m " + "list");
+  const list = chatCommand.handleCommand(runtime, config, world.session, "mining " + "list");
   assert.match(list.message, /Veldspar/);
   assert.match(list.message, /Blue Ice/);
   assert.match(list.message, /2 rocks, 200 m3 left, nearest 9500 m/u);
   assert.match(list.message, /\* ore/u, "the rock the filter already matches is marked");
 
-  const iceOnly = chatCommand.handleCommand(runtime, config, world.session, "m " + "list ice");
+  const iceOnly = chatCommand.handleCommand(runtime, config, world.session, "mining " + "list ice");
   assert.match(iceOnly.message, /Blue Ice/);
   assert.equal(/Veldspar/u.test(iceOnly.message), false);
 
-  const badScope = chatCommand.handleCommand(runtime, config, world.session, "m " + "list gas");
+  const badScope = chatCommand.handleCommand(runtime, config, world.session, "mining " + "list gas");
   assert.match(badScope.message, /list takes "ore", "ice" or "moon"/);
 });
 
@@ -2592,11 +2634,11 @@ test("chat: list and filter still answer when players may not change settings", 
   const world = makeWorld();
   const config = makeConfig({ allowPlayerToggle: false });
   const runtime = createRuntime({ config, deps: world.deps });
-  const list = chatCommand.handleCommand(runtime, config, world.session, "m " + "list");
+  const list = chatCommand.handleCommand(runtime, config, world.session, "mining " + "list");
   assert.match(list.message, /mineable rocks in range/);
-  const shown = chatCommand.handleCommand(runtime, config, world.session, "m " + "filter");
+  const shown = chatCommand.handleCommand(runtime, config, world.session, "mining " + "filter");
   assert.match(shown.message, /nothing is queued/);
-  const refused = chatCommand.handleCommand(runtime, config, world.session, "m " + "filter ore add 1 veldspar");
+  const refused = chatCommand.handleCommand(runtime, config, world.session, "mining " + "filter ore add 1 veldspar");
   assert.match(refused.message, /disabled by the server/);
 });
 
@@ -2637,7 +2679,7 @@ test("copy: the identifier takes an id, a User: label or a unique name", () => {
   assert.equal(copy.hasCopyableSettings({ characterName: "x", targetMode: "focus" }), true);
 });
 
-test("chat: /aud m copy finds a character and hands their setup over", () => {
+test("chat: /aud copy finds a character and hands their setup over", () => {
   const store = makePlayersFile("copy");
   const players = playerSettings.createPlayerStore({ file: store.file });
   const world = makeWorld({
@@ -2648,14 +2690,14 @@ test("chat: /aud m copy finds a character and hands their setup over", () => {
   const lead = { characterID: 8, characterName: "Fleet Lead" };
   const alt = { characterID: 7, characterName: "Alt Two" };
 
-  chatCommand.handleCommand(runtime, config, lead, "m " + "focus");
-  chatCommand.handleCommand(runtime, config, lead, "m " + "threshold 3");
-  chatCommand.handleCommand(runtime, config, lead, "m " + "range 45000");
-  chatCommand.handleCommand(runtime, config, lead, "m " + "filter add pyroxeres veldspar");
-  chatCommand.handleCommand(runtime, config, lead, "m " + "fallback idle");
+  chatCommand.handleCommand(runtime, config, lead, "mining " + "focus");
+  chatCommand.handleCommand(runtime, config, lead, "mining " + "threshold 3");
+  chatCommand.handleCommand(runtime, config, lead, "mining " + "range 45000");
+  chatCommand.handleCommand(runtime, config, lead, "mining " + "filter add pyroxeres veldspar");
+  chatCommand.handleCommand(runtime, config, lead, "mining " + "filter fallback idle");
   runtime.setPlayerControlPolicy(7, "off", { characterName: "Alt Two" });
 
-  // "/aud m copy" on its own is the shape of the command and nothing else, and
+  // "/aud copy" on its own is the shape of the command and nothing else, and
   // the roster answers to "copy list" so a bare copy stays short.
   const usage = chatCommand.handleCommand(runtime, config, alt, "copy");
   assert.match(usage.message, /part of a name is enough/);
@@ -2954,49 +2996,50 @@ test("chat: the salvage menu is its own set of switches", () => {
   });
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "salvage " + line);
 
-  assert.match(run("s help").message, /the commands that follow \/aud s/);
-  assert.match(run("s help").message, /\/aud s distance nearest\|farthest/);
-  assert.match(run("s status").message, /AdvancedUtilityDrones v.* salvage/);
-  assert.match(run("s status").message, /wrecks\s+: 1 in range/);
-  assert.match(run("s status").message, /cargo hold/);
-  assert.match(run("s list").message, /wrecks in range/);
-  assert.match(run("s list").message, /\(4001\) .*character 7's/);
+  assert.match(run("help").message, /the commands that follow \/aud salvage/);
+  assert.match(run("help").message, /\/aud salvage distance nearest\|farthest/);
+  assert.match(run("status").message, /AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("status").message, /wrecks\s+: 1 in range/);
+  assert.match(run("status").message, /cargo hold/);
+  assert.match(run("list").message, /wrecks in range/);
+  assert.match(run("list").message, /\(4001\) .*character 7's/);
 
-  assert.match(run("s off").message, /salvage OFF for you/);
+  assert.match(run("off").message, /salvage OFF for you/);
   assert.equal(runtime.getSalvageState(7).enabled, false);
   assert.equal(runtime.getPlayerState(7).enabled, true,
     "the mining switch is a different switch");
-  assert.match(run("s on").message, /salvage ON for you/);
+  assert.match(run("on").message, /salvage ON for you/);
   assert.equal(runtime.getSalvageState(7).enabled, true);
 
-  assert.match(run("s focus").message, /salvage targeting mode: FOCUS/);
+  assert.match(run("focus").message, /salvage targeting mode: FOCUS/);
   assert.equal(runtime.getSalvageState(7).targetMode, "focus");
   assert.equal(runtime.getPlayerState(7).targetMode, "spread");
 
-  assert.match(run("s distance").message, /distance: nearest first/);
-  assert.match(run("s distance farthest").message, /distance: farthest first/);
-  assert.match(run("s distance sideways").message, /must be "nearest" or "farthest"/);
+  assert.match(run("distance").message, /distance: nearest first/);
+  assert.match(run("distance farthest").message, /distance: farthest first/);
+  assert.match(run("distance sideways").message, /must be "nearest" or "farthest"/);
 
-  // A letter is enough where one command owns it, and the whole word is spoken
-  // when two of them could take it.
-  assert.match(run("s d f").message, /distance: farthest first/);
-  assert.match(run("s d n").message, /distance: nearest first/);
-  assert.match(run("s d sideways").message, /must be "nearest" or "farthest"/);
-  assert.match(run("s sp").message, /salvage targeting mode: SPREAD/);
-  assert.match(run("s st").message, /AdvancedUtilityDrones v.* salvage/);
-  assert.match(run("s o").message, /could be on or off/);
-  assert.match(run("s bogus").message, /unknown option "bogus"/);
+  // A switch takes its value in full, and a command is two letters or the
+  // whole word: one letter names nothing any more, on either menu.
+  assert.match(run("ds farthest").message, /distance: farthest first/);
+  assert.match(run("ds nearest").message, /distance: nearest first/);
+  assert.match(run("ds sideways").message, /must be "nearest" or "farthest"/);
+  assert.match(run("sp").message, /salvage targeting mode: SPREAD/);
+  assert.match(run("st").message, /AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("d").message, /unknown option "d"/);
+  assert.match(run("o").message, /unknown option "o"/);
+  assert.match(run("bogus").message, /unknown option "bogus"/);
 
   // The shared commands answer from this menu too, and so does the whole-character
   // reset - one kind at a time.
-  assert.match(run("s range 45000").message, /search radius set to 45\.0 km/);
-  assert.match(run("s threshold 5").message, /threshold: 5 m3/);
-  assert.match(run("s control recall").message, /takeover: RECALL/);
-  run("s d f");
+  assert.match(run("range 45000").message, /search radius set to 45\.0 km/);
+  assert.match(run("threshold 5").message, /threshold: 5 m3/);
+  assert.match(run("control recall").message, /takeover: RECALL/);
+  run("ds farthest");
   assert.equal(runtime.getSalvageState(7).distance, "farthest");
-  run("s reset");
+  run("clear");
   const afterReset = runtime.getSalvageState(7);
   assert.equal(afterReset.distance, "nearest", "the salvage keys are back on the defaults");
   assert.equal(afterReset.targetMode, "spread");

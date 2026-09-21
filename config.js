@@ -135,7 +135,7 @@ const SALVAGE_DISTANCE_FARTHEST = "farthest";
 const FILTER_FALLBACK_ANY = "any";
 const FILTER_FALLBACK_IDLE = "idle";
 // The three buckets a rock can be filtered into. Moon ore is kept apart from
-// ordinary ore on purpose: /aud m filter ore never matches a moon rock.
+// ordinary ore on purpose: /aud mining filter ore never matches a moon rock.
 const ORE_FILTER_SCOPES = Object.freeze(["ore", "ice", "moon"]);
 // A queue entry is a substring of the ore's type name ("veldspar" matches
 // Veldspar, Dense Veldspar and Concentrated Veldspar alike), a type ID, or one

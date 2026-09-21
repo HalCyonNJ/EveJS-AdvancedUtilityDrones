@@ -154,7 +154,7 @@ an older release, and the copy inside a Docker image all read as one, because `.
   inert. Nothing in EveJS reports that, so the status command does - as a note, since a checkout ships
   both entry points while you normally run only one.
 
-Re-run this after installing anything else that preloads a loader. In game, `/aud m status` is
+Re-run this after installing anything else that preloads a loader. In game, `/aud mining status` is
 the per-character view, including the resolved control range and its breakdown.
 
 ## Update

@@ -11,12 +11,12 @@ It is server-side only. No vendor file is modified on disk, and **there is nothi
 players** - the client already renders whatever the server tells it a drone is doing, and this mod
 issues exactly the call a player's own order issues.
 
-Players steer it from ordinary chat (`!aud m ...` for the miners, `!aud s ...` for the salvagers),
+Players steer it from ordinary chat (`!aud mining ...` for the miners, `!aud salvage ...` for the salvagers),
 which reaches the server for every character whatever rights it has; what they choose is saved per
 character in `config/advancedUtilityDrones.players.json`. The slash form works wherever the client
 forwards it, and both run one handler. `/aud` on its own prints the two menus and nothing else: the
-kind of drone comes first, because the two squadrons are switched separately - `/aud m off` parks the
-miners and leaves the salvagers working, and `/aud s off` does the opposite.
+kind of drone comes first, because the two squadrons are switched separately - `/aud mining off` parks the
+miners and leaves the salvagers working, and `/aud salvage off` does the opposite.
 
 See [HOW-IT-WORKS.md](HOW-IT-WORKS.md) for the mechanism, the exact seams, the compatibility
 contract with the other server-side mods, and the invariants to preserve if you modify it.
@@ -30,20 +30,20 @@ Launch your mining or ice drones and they go to work on their own:
 
 - 🎯 the closest compatible rock inside your ship's drone control range - ore, ice and moon ore all work,
 - 🧊 ice harvesting drones take ice and leave your ore alone: each drone type only takes what it can actually mine,
-- 🪨 `spread` puts one drone per rock, and the closest rock still takes the leftovers once every other rock has a drone on it; `/aud m focus` stacks them all on one rock instead,
+- 🪨 `spread` puts one drone per rock, and the closest rock still takes the leftovers once every other rock has a drone on it; `/aud mining focus` stacks them all on one rock instead,
 - 📦 hold full? the whole squadron recalls itself to the drone bay,
 - 🛡️ drone taking fire? the whole squadron comes home and stays home for two minutes,
 - 🖱️ ordered a drone somewhere by hand? it is left completely alone - only idle drones are ever touched.
 
-`/aud m filter` turns that into a queue, one per kind of rock: an entry is a rock name or a type ID, the
+`/aud mining filter` turns that into a queue, one per kind of rock: an entry is a rock name or a type ID, the
 order typed is the order mined, `move` / `del` / `clear` edit it, and `grade on` takes the richest grade
 of a rock in range before the plainer ones. Every reply prints the queue as one numbered list per kind
 of rock, always by name, and a change reaches drones that are already mining within a second.
 
 Launch salvage drones over a wreck field and each one picks a wreck of its own:
 
-- 🔧 the nearest wreck first, or the far end of the field first with `/aud s distance farthest`,
-- 🧭 `/aud s spread` gives every drone its own wreck, `/aud s focus` puts the whole squadron on one,
+- 🔧 the nearest wreck first, or the far end of the field first with `/aud salvage distance farthest`,
+- 🧭 `/aud salvage spread` gives every drone its own wreck, `/aud salvage focus` puts the whole squadron on one,
 - 🔒 a wreck belongs to somebody, but stripping a hull is not what carries a flag in this game - taking the loot is - so the squadron works any wreck in range,
 - 📦 salvage material goes into the cargo hold - no hull here has a hold that receives it anywhere else - so that is the hold the rule watches,
 - 🖱️ a drone ordered by hand is left alone, exactly like a miner.
@@ -92,7 +92,7 @@ picker never asks - whether the wreck is someone else's, and whether taking it i
 | Ice harvesting drone | Mines ice only. `miningClouds` exists **only** on gas scoop and gas harvester modules in SDE 3396210, so no gas-cloud drone exists to automate. |
 | Several idle drones, default `spread` | One rock each; the closest rock still collects the remainder when every other rock in range already has a drone on it. |
 | `focus` mode | Every idle drone on the closest compatible rock. |
-| **What to mine, in order** | `/aud m filter add veldspar, kernite, blue ice` queues the rocks to mine, and the order typed is the order mined: the drones only move on to the next entry once nothing in range matches the one above it. Every entry is a rock name or a type ID (`1231`), one per comma, and a name matches any rock whose own name contains it - so `dark ochre` is one rock, not two. A bare number has to name a rock: `add 1231` is queued, while a word that fits nothing - a number no rock has, or a name that is already in the list - is passed over with a `warning` line and the rest of the line still goes in. `add` never reorders an entry that is already queued; `move` is the command that moves one. `/aud m filter move` reorders an entry with the number the reply printed - a name typed without one goes to the end of its list, and the reply says so - `del` drops one, `clear ore\|ice\|moon` empties a whole kind, and `grade on` sends the drones to the richest grade of a rock in range first and re-tasks the drones that are already mining. Every reply prints the queue as one numbered list per kind of rock, always by name - a queued type ID reads back as the rock it stands for. A name that matches no rock is reported on a `warning` line with the name it probably meant, `/aud m list` prints the names to queue, and `/aud m filter help` (or `/aud m f help`, the filter's short spelling) lists the filter's own commands. A change reaches the drones that are already mining within a second. |
+| **What to mine, in order** | `/aud mining filter add veldspar, kernite, blue ice` queues the rocks to mine, and the order typed is the order mined: the drones only move on to the next entry once nothing in range matches the one above it. Every entry is a rock name or a type ID (`1231`), one per comma, and a name matches any rock whose own name contains it - so `dark ochre` is one rock, not two. A bare number has to name a rock: `add 1231` is queued, while a word that fits nothing - a number no rock has, or a name that is already in the list - is passed over with a `warning` line and the rest of the line still goes in. `add` never reorders an entry that is already queued; `move` is the command that moves one. `/aud mining filter move` reorders an entry with the number the reply printed - a name typed without one goes to the end of its list, and the reply says so - `del` drops one, `clear ore\|ice\|moon` empties a whole kind, and `grade on` sends the drones to the richest grade of a rock in range first and re-tasks the drones that are already mining. Every reply prints the queue as one numbered list per kind of rock, always by name - a queued type ID reads back as the rock it stands for. A name that matches no rock is reported on a `warning` line with the name it probably meant, `/aud mining list` prints the names to queue, and `/aud mining filter help` (or `/aud mining fl help`, the filter's short spelling) lists the filter's own commands. A change reaches the drones that are already mining within a second. |
 | **Multibox fleet** | `/aud copy <name\|id>` hands another character's whole setup - mode, threshold, takeover rule, range and the full queue - to the character who types it. Part of a name is enough and a misspelling is tolerated, because a player without staff rights never gets to see another account's ID. `/aud copy` on its own shows how to search; `/aud copy list [name]` shows who is stored here. |
 | Rock depleted | The drone goes idle again and is re-targeted on the next scan. |
 | Hold cannot take one more unit | Every mining drone of that ship recalls to the drone bay. The deciding bay is the one the server delivers into: the hull's own mining bay when it has one, its cargo hold otherwise. |
@@ -101,22 +101,22 @@ picker never asks - whether the wreck is someone else's, and whether taking it i
 | One of those drones takes damage | Every mining drone of that ship recalls to the drone bay, then stays put for 120 s. |
 | Player ordered a drone by hand | That drone is left alone until it is launched again; the rest of the squadron keeps working. Configurable with `playerControlPolicy`. |
 | Ship is warping | Nothing is assigned. |
-| `/aud m off`, or `!aud m off` from chat | That character's mining drones go back to being fully manual. |
+| `/aud mining off`, or `!aud mining off` from chat | That character's mining drones go back to being fully manual. |
 
 ### Salvage drones
 
 | Situation | Behaviour |
 |---|---|
 | Salvage drone launched, no order given | Auto-targets a wreck inside the ship's drone control range and starts salvaging it. |
-| Which wreck, default `nearest` | The closest wreck first. `/aud s distance farthest` works the field from the far end instead, which is what a long run through a belt of wrecks wants. |
-| Several idle drones, default `spread` | One wreck each, the nearest still collecting the remainder; `/aud s focus` puts the whole squadron on one wreck. |
+| Which wreck, default `nearest` | The closest wreck first. `/aud salvage distance farthest` works the field from the far end instead, which is what a long run through a belt of wrecks wants. |
+| Several idle drones, default `spread` | One wreck each, the nearest still collecting the remainder; `/aud salvage focus` puts the whole squadron on one wreck. |
 | **Whose wreck it is** | Nobody asks. Stripping a hull moves no item, and in this game it is taking the loot that carries a suspect flag and not the hull - so a wreck that belonged to another pilot is worked exactly like your own. |
 | Salvage material | Goes into the cargo hold, which is where this server delivers drone salvage. The hold rule and the threshold read that hold. |
 | Hold cannot take one more unit | Every salvage drone of that ship recalls to the drone bay. |
 | One of those drones takes damage | Every salvage drone of that ship recalls to the drone bay, then stays put for 120 s. |
 | Player ordered a drone by hand | That drone is left alone until it is launched again; the rest of the squadron keeps working. Configurable with `playerControlPolicy`. |
 | Ship is warping | Nothing is assigned. |
-| `/aud s off`, or `!aud s off` from chat | That character's salvage drones go back to being fully manual. |
+| `/aud salvage off`, or `!aud salvage off` from chat | That character's salvage drones go back to being fully manual. |
 
 ## Install
 
@@ -165,7 +165,7 @@ A healthy boot logs five lines:
 
 ```text
 [advancedUtilityDrones] v1.0.0-alpha loader ready - control range follows the ship by default; ...
-[advancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud m for the mining drones, /aud s for the salvage drones)
+[advancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
 [advancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
 [advancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights
 [advancedUtilityDrones] drone tick hook installed - idle drones are re-tasked every 500 ms (mining spread, salvage spread)
@@ -250,8 +250,8 @@ A players file written before the split - 1.3.0 and earlier - kept `enabled`, `t
 *mining* kind, so an upgrade does not need the file edited by hand. A key under `mining` wins over
 the same key at the top level, because the nested one is the one somebody typed on purpose.
 
-`/aud reset` deletes a character's entry and puts them back on the server defaults; `/aud m reset`
-and `/aud s reset` clear one kind and leave the other alone.
+`/aud clear` deletes a character's entry and puts them back on the server defaults; `/aud mining clear`
+and `/aud salvage clear` clear one kind and leave the other alone.
 
 `/aud copy <name|id>` goes the other way round: it reads another character's entry out of this file
 and writes it onto yours, complete and exact - a key the source never set is dropped from your entry
@@ -316,53 +316,56 @@ clamped by `rangeMinMeters`/`rangeMaxMeters`.
 
 No GM or staff role is required - these are per-character, exactly like `/motd` or `/where`.
 
-The command word is **`/aud`** and nothing else, and the **kind of drone comes first**: `/aud m` is the
-mining menu and `/aud s` is the salvage menu, because the two squadrons are switched, tasked and tuned
+The command word is **`/aud`** and nothing else, and the **kind of drone comes first**: `/aud mining` is the
+mining menu and `/aud salvage` is the salvage menu, because the two squadrons are switched, tasked and tuned
 separately. A bare `/aud` answers with one line per kind of drone and nothing else, so the menus open
 one word further in; a bare `/aud off` is refused with a pointer to the two spelled-out forms.
 
-Any word in a command may be cut down to the letters that still pick it out on its own: `/aud m f ore
-clear` is `/aud m filter ore clear`, `/aud m sp` is `/aud m spread`, and `/aud s d farthest` is
-`/aud s distance farthest`. Where two commands could take the same letters the answer names both
-rather than guessing, which is why the spread is `sp` and the status is `st`.
+Every command has exactly two spellings and nothing else: the word, and one short form of two letters.
+There is no prefix guessing, because a letter that means one thing here and another thing in the mod next
+door is worse than a word that means nothing at all. So `/aud mining fl ore clear` is `/aud mining filter
+ore clear`, `/aud mining sp` is `/aud mining spread`, and `/aud salvage ds farthest` is `/aud salvage
+distance farthest`. What a command takes is always typed in full - `ore`, `nearest`, `hold`, a number, a
+name. `help` also answers to `h`, the one single letter left in the mod; there is no `?`.
 
 | Command | Effect |
 |---|---|
-| `/aud` / `/aud help` | One line per kind of drone and nothing else. `/aud copy` and `/aud reset` cover a character rather than one kind, and are listed under either menu's help. |
-| `/aud m help` | The mining commands in full, one line each. |
-| `/aud s help` | The salvage commands in full, one line each. |
-| `/aud m status` | Mining state: drones in space/mining/idle, assignment and recall counters, and the resolved control range with its breakdown. |
-| `/aud m on` / `off` | Turn automatic mining on or off for **your character only**. The salvage switch is a different switch. |
-| `/aud m spread` / `focus` | The miners' targeting mode. |
-| `/aud m range` | Show the control range and where each part of it comes from. |
-| `/aud m range 120000` | Search radius override for your character, in meters. Two hulls with different fits need two radii. |
-| `/aud m range ship` | Drop the override and follow your ship again. |
-| `/aud m threshold 4` | Recall once the destination bay has less than 4 m3 free. |
-| `/aud m filter` | The queue: what is mined, in which order - one numbered list per kind of rock, then the fallback and whether the grade preference is on. |
-| `/aud m f ...` | The short spelling of `filter`: `/aud m f add veldspar` is `/aud m filter add veldspar`, `/aud m f` prints the queue, and `/aud m f help` the list. |
-| `/aud m filter add veldspar, kernite, blue ice` | Queue those rocks - the order typed is the order mined. One entry per comma, and a name that holds a space stays one name (`add gneiss, dark ochre`). An entry is a rock name, part of one, or a type ID (`1231`); `add` takes no position, and a word that fits nothing - or a name that is already queued - is passed over with a `warning` line while the rest of the line still goes in. |
-| `/aud m filter move veldspar 2 kernite 1` | Reorder with the numbers the reply printed. The **first name picks the kind of rock** whose list is edited, and an entry of another kind is passed over with a warning. A name with no number goes to the end of its list; a name that is not queued is reported instead of added. |
-| `/aud m filter del kernite` | Drop an entry by name or type ID - `del 16268` drops Gelidus, and either spelling is printed back as the name. |
-| `/aud m filter clear ore` / `ice` / `moon` | Empty one kind's list. It is the only filter command that takes a kind word. |
-| `/aud m filter grade on` / `off` | Mine the richest grade of a rock in range before the plainer ones, or count every grade the same (default). Per character; `default` goes back to the server setting. |
-| `/aud m list` | Every ore type in drone range with the name to queue, the volume left and the nearest distance. |
-| `/aud m control hold` | A drone you order by hand is left alone until it is launched again (default). `recall` only reacts to a manual recall; `off` keeps automating it. |
-| `/aud m resume` | Hand your mining drones back to the automation after a manual takeover. |
-| `/aud m reset` | Forget the mining settings and follow the server defaults again. The salvage switches stay. |
-| `/aud s status` | Salvage state: drones out, wrecks in range, salvage assignments and recalls with the last reason, and the hold the material goes into. |
-| `/aud s on` / `off` | Turn automatic salvage on or off for **your character only**, separately from mining. |
-| `/aud s spread` / `focus` | One wreck per drone, or the whole squadron on the same wreck. |
-| `/aud s distance` | Which end of the field is worked first. |
-| `/aud s distance nearest` / `farthest` | Start at the near end, or at the far one. |
-| shorter spellings | Any word may be cut down to the letters that pick it out alone: `/aud m f ore clear`, `/aud m sp`, `/aud s d farthest`. A letter two commands could take - `s` is the spread or the status - is answered with both. |
-| `/aud s list` | The wrecks around your ship in the order the drones will work them, nearest first, each with the character it belonged to. |
-| `/aud s range`, `/aud s threshold`, `/aud s control`, `/aud s resume`, `/aud s reset` | The same shared switches as the mining menu - one radius, one hold threshold, one takeover rule per character, and a reset that clears the salvage half alone. |
+| `/aud` / `/aud help` | One line per kind of drone and nothing else. `/aud copy` and `/aud clear` cover a character rather than one kind, and are listed under either menu's help. |
+| `/aud mining help` | The mining commands in full, one line each. |
+| `/aud salvage help` | The salvage commands in full, one line each. |
+| `/aud mining status` | Mining state: drones in space/mining/idle, assignment and recall counters, and the resolved control range with its breakdown. |
+| `/aud mining on` / `off` | Turn automatic mining on or off for **your character only**. The salvage switch is a different switch. |
+| `/aud mining spread` / `focus` | The miners' targeting mode. |
+| `/aud mining range` | Show the control range and where each part of it comes from. |
+| `/aud mining range 120000` | Search radius override for your character, in meters. Two hulls with different fits need two radii. |
+| `/aud mining range ship` | Drop the override and follow your ship again. |
+| `/aud mining threshold 4` | Recall once the destination bay has less than 4 m3 free. |
+| `/aud mining filter` | The queue: what is mined, in which order - one numbered list per kind of rock, then the fallback and whether the grade preference is on. |
+| `/aud mining fl ...` | The short spelling of `filter`: `/aud mining fl add veldspar` is `/aud mining filter add veldspar`, `/aud mining fl` prints the queue, and `/aud mining fl help` the list. |
+| `/aud mining filter add veldspar, kernite, blue ice` | Queue those rocks - the order typed is the order mined. One entry per comma, and a name that holds a space stays one name (`add gneiss, dark ochre`). An entry is a rock name, part of one, or a type ID (`1231`); `add` takes no position, and a word that fits nothing - or a name that is already queued - is passed over with a `warning` line while the rest of the line still goes in. |
+| `/aud mining filter move veldspar 2 kernite 1` | Reorder with the numbers the reply printed. The **first name picks the kind of rock** whose list is edited, and an entry of another kind is passed over with a warning. A name with no number goes to the end of its list; a name that is not queued is reported instead of added. |
+| `/aud mining filter del kernite` | Drop an entry by name or type ID - `del 16268` drops Gelidus, and either spelling is printed back as the name. |
+| `/aud mining filter clear ore` / `ice` / `moon` | Empty one kind's list. It is the only filter command that takes a kind word. |
+| `/aud mining filter grade on` / `off` | Mine the richest grade of a rock in range before the plainer ones, or count every grade the same (default). Per character; `default` goes back to the server setting. |
+| `/aud mining list` | Every ore type in drone range with the name to queue, the volume left and the nearest distance. |
+| `/aud mining control hold` | A drone you order by hand is left alone until it is launched again (default). `recall` only reacts to a manual recall; `off` keeps automating it. |
+| `/aud mining resume` | Hand your mining drones back to the automation after a manual takeover. |
+| `/aud mining clear` | Forget the mining settings and follow the server defaults again. The salvage switches stay. |
+| `/aud salvage status` | Salvage state: drones out, wrecks in range, salvage assignments and recalls with the last reason, and the hold the material goes into. |
+| `/aud salvage on` / `off` | Turn automatic salvage on or off for **your character only**, separately from mining. |
+| `/aud salvage spread` / `focus` | One wreck per drone, or the whole squadron on the same wreck. |
+| `/aud salvage distance` | Which end of the field is worked first. |
+| `/aud salvage distance nearest` / `farthest` | Start at the near end, or at the far one. |
+| shorter spellings | Every command has exactly two spellings: the word and one short form of two letters - `/aud mi fl ore clear`, `/aud mi sp`, `/aud sa ds farthest`. Nothing else is accepted, and nothing is guessed at. `help` is the one command that also answers to a single letter, `h`. |
+| `/aud salvage list` | The wrecks around your ship in the order the drones will work them, nearest first, each with the character it belonged to. |
+| `/aud salvage range`, `/aud salvage threshold`, `/aud salvage control`, `/aud salvage resume`, `/aud salvage clear` | The same shared switches as the mining menu - one radius, one hold threshold, one takeover rule per character, and a `clear` that empties the salvage half alone. |
 | `/aud copy` | How to search, and where the roster of stored characters is. |
 | `/aud copy list [name]` | Every character whose settings are stored here - id, name, mode and queue - narrowed by part of a name. The caller is marked `(you)`. |
 | `/aud copy exampel` / `copy User:140000005` | Copy that character's whole setup - **both kinds of drone** - onto you. Part of a name is enough, and a name typed in the wrong order or one letter off still finds them. |
-| `/aud reset` | Delete your saved settings and follow the server defaults again, both kinds at once. |
+| `/aud clear` | Delete your saved settings and follow the server defaults again, both kinds at once. |
 
-`filter` is the one command with a short form, `f`, and it is reached as `/aud m f ...`. The old
+Every command has a two-letter short form - `filter` is `fl`, `spread` is `sp`, `help` is `h` - and
+nothing else is accepted. The old
 `/atm`, `/altmining`, `!atm` and `!altmining` spellings answer with a single line naming the new
 commands instead of doing anything. Setting `allowPlayerToggle: false` removes the per-character
 commands and leaves only the server defaults.
@@ -375,9 +378,9 @@ message, which the server broadcasts without ever looking at it, so the mod cons
 would be broadcast:
 
 ```text
-!aud m status
-!aud s on
-!aud s distance farthest
+!aud mining status
+!aud salvage on
+!aud salvage distance farthest
 !aud copy astrea
 ```
 
@@ -464,7 +467,7 @@ off switch, the manual-takeover parking and resume, the state-replay schedule, t
 seam with a real round trip through the wrapped drone commands, the queue grammar and its reading of
 the 1.2.2 per-kind shape, what each verb does with a word that names nothing (`add` dropping it and
 queueing the rest, `move` warning about a name typed without a place, `del` reaching an entry from
-either spelling), the two help lists and the filter's short spelling `f`, the grade preference and
+either spelling), the two help lists and the filter's short spelling `fl`, the grade preference and
 its place in the signature that re-tasks a working drone, the ore-name catalogue that groups a reply
 by kind (including the live mining state outranking the static table), the grouped lines and the
 `move` command that read it, the `/aud copy` finder (id, `User:` label, partial, reordered and
