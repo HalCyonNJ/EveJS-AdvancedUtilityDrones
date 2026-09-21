@@ -28,10 +28,20 @@ const GAS_HOLD_FLAG = 135;
 const ICE_HOLD_FLAG = 181;
 const CARGO_HOLD_FLAG = 5;
 const ICE_YIELD_TYPE = 16264;
+// A salvage drone, from the SDE's own name. Its effect is not simulated here,
+// which is the point: with no effect to ask about, the name decides.
+const SALVAGE_DRONE_TYPE = 32444;
+// A drone a third-party mod shipped under a name no rule of ours recognises.
+// Nothing but the game's own effect records can tell what it does, which is
+// exactly the case the effect probe exists for.
+const THIRD_PARTY_DRONE_TYPE = 90001;
+const WRECK_TYPE = 23;
 
 const TYPE_NAMES = {
   [ORE_DRONE_TYPE]: "Mining Drone I",
   [ICE_DRONE_TYPE]: "Ice Harvesting Drone I",
+  [SALVAGE_DRONE_TYPE]: "Salvage Drone I",
+  [THIRD_PARTY_DRONE_TYPE]: "Swarm Harvester XLS",
   [LINK_AUGMENTOR_TYPE]: "Drone Link Augmentor I",
   [DRONE_AVIONICS_TYPE]: "Drone Avionics",
   [ADVANCED_DRONE_AVIONICS_TYPE]: "Advanced Drone Avionics",
@@ -112,7 +122,7 @@ function makeConfig(overrides = {}) {
 // A throwaway players file, so a test never writes into the repository.
 function makePlayersFile(label) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-" + label + "-"));
-  return { dir, file: path.join(dir, "alternateMiningDrones.players.json") };
+  return { dir, file: path.join(dir, "advancedUtilityDrones.players.json") };
 }
 
 function makeDrone(options) {
@@ -152,6 +162,33 @@ function makeRock(itemID, kind, yieldTypeID, distanceMeters, unitVolume = 0.1) {
   };
 }
 
+// A wreck as the scene holds one: kind "wreck", an item ID, and the owner
+// whose loot rights decide whether this pilot may touch it.
+function makeWreck(itemID, distanceMeters, ownerID) {
+  return {
+    itemID,
+    typeID: WRECK_TYPE,
+    categoryID: 40,
+    kind: "wreck",
+    ownerID,
+    itemName: "Wreck",
+    position: { x: distanceMeters, y: 0, z: 0 },
+    radius: 0,
+  };
+}
+
+function salvageSquad(size, controllerID = 1000) {
+  const drones = [];
+  for (let index = 0; index < size; index += 1) {
+    drones.push(makeDrone({
+      itemID: 2001 + index,
+      typeID: SALVAGE_DRONE_TYPE,
+      controllerID,
+    }));
+  }
+  return drones;
+}
+
 function makeWorld(options = {}) {
   const shipEntity = {
     itemID: 1000,
@@ -179,8 +216,29 @@ function makeWorld(options = {}) {
   // are never accepted into it. Both exist to exercise the stale-cache rebuild.
   const staleRock = options.staleRock || null;
   const unknownMineableEntities = options.unknownMineableEntities || [];
+  const wrecks = options.wrecks || [];
+  // A second hull in the same system, for the tests about two pilots sharing a
+  // belt: its drones belong to it and its claims must not count against the
+  // first ship's.
+  const secondShip = options.secondShip
+    ? {
+        itemID: options.secondShip.itemID,
+        typeID: 28352,
+        categoryID: 6,
+        kind: "ship",
+        ownerID: options.secondShip.characterID,
+        characterID: options.secondShip.characterID,
+        position: { x: 0, y: 0, z: 0 },
+        radius: 500,
+        mode: "STOP",
+        warpState: null,
+      }
+    : null;
   const entities = new Map();
   entities.set(shipEntity.itemID, shipEntity);
+  if (secondShip) {
+    entities.set(secondShip.itemID, secondShip);
+  }
   for (const drone of drones) {
     entities.set(drone.itemID, drone);
   }
@@ -189,6 +247,9 @@ function makeWorld(options = {}) {
   }
   for (const entity of unknownMineableEntities) {
     entities.set(entity.itemID, entity);
+  }
+  for (const wreck of wrecks) {
+    entities.set(wreck.itemID, wreck);
   }
   if (staleRock) {
     entities.set(staleRock.entity.itemID, staleRock.entity);
@@ -201,6 +262,7 @@ function makeWorld(options = {}) {
       ...rocks.map((rock) => rock.entity),
       ...unknownMineableEntities,
       ...(staleRock ? [staleRock.entity] : []),
+      ...wrecks,
     ],
     getEntityByID: (entityID) => entities.get(Number(entityID)) || null,
   };
@@ -229,8 +291,11 @@ function makeWorld(options = {}) {
     },
   };
 
-  const calls = { mine: [], returnBay: [] };
+  const calls = { mine: [], returnBay: [], salvage: [], warnings: [] };
   const shipItem = { itemID: 1000, typeID: 28352 };
+  const secondShipItem = secondShip
+    ? { itemID: secondShip.itemID, typeID: 28352 }
+    : null;
   const holdCapacityByFlag = {
     [ORE_HOLD_FLAG]: options.oreHoldCapacity ?? 1000,
     [GENERAL_MINING_HOLD_FLAG]: options.generalMiningHoldCapacity ?? 0,
@@ -250,11 +315,21 @@ function makeWorld(options = {}) {
     { itemID: 5003, typeID: LINK_AUGMENTOR_TYPE, flagID: 29 },
   ];
   const session = { characterID: 7, _space: { systemID: 30000142 } };
+  const secondSession = secondShip
+    ? { characterID: secondShip.characterID, _space: { systemID: 30000142 } }
+    : null;
 
   const deps = {
     getDroneRuntime: () => ({
       commandMineRepeatedly: (activeSession, droneIDs, targetID) => {
         calls.mine.push({ session: activeSession, droneIDs, targetID });
+        return { success: true };
+      },
+      commandSalvage: (activeSession, droneIDs, targetID) => {
+        calls.salvage.push({ session: activeSession, droneIDs, targetID });
+        // The drone is deliberately left idle and with no standing order: the
+        // tests that care about the per-launch warning list are about the list,
+        // not about the drone's own command suppressing a second attempt.
         return { success: true };
       },
       commandReturnBay: (activeSession, droneIDs) => {
@@ -277,12 +352,29 @@ function makeWorld(options = {}) {
       ),
       _testing: {
         canPlayerCompanionActOnTarget: () => options.canActOnTarget !== false,
-        resolveRuntimeSceneForSession: (_space, activeSession) => (
-          Number(activeSession && activeSession.characterID) === 7 ? scene : null
-        ),
+        resolveRuntimeSceneForSession: (_space, activeSession) => {
+          const characterID = Number(activeSession && activeSession.characterID);
+          if (characterID === 7) {
+            return scene;
+          }
+          return secondShip && characterID === secondShip.characterID ? scene : null;
+        },
       },
     }),
+    // The game's own effect records. They answer for the drone types a test
+    // lists, and stay silent for everything else, which leaves the name to
+    // decide exactly as it did before the probe existed.
     getDroneDogma: () => ({
+      resolveDroneSalvageSnapshot: (droneEntity) => (
+        (options.salvageByEffectTypeIDs || []).includes(Number(droneEntity && droneEntity.typeID))
+          ? { maxRangeMeters: 20000 }
+          : null
+      ),
+      resolveDroneMiningSnapshot: (droneEntity) => (
+        (options.miningByEffectTypeIDs || []).includes(Number(droneEntity && droneEntity.typeID))
+          ? { maxRangeMeters: 20000 }
+          : null
+      ),
       _testing: {
         getControllerDogmaContext: () => ({
           skillMap,
@@ -321,17 +413,60 @@ function makeWorld(options = {}) {
       TABLE: { ITEM_TYPES: "itemTypes" },
       readStaticRows: () => ORE_TYPE_ROWS,
     }),
+    // A wreck is salvageable when the scene says it is a wreck; the server's
+    // own answer is what the mod defers to, so that is what the stub returns.
+    getSalvagerRuntime: () => ({
+      isSalvageableTarget: (entity) => Boolean(entity && entity.kind === "wreck"),
+    }),
+    // The loot path's own question: may this pilot take from this wreck, and
+    // would taking it flag them? By default a wreck belongs to whoever owns it,
+    // and a wreck that is not the pilot's flags them - which is what makes
+    // \"foreign off\" the meaningful default. options.lootAccess replaces the
+    // whole answer, which is how the safety-light case is expressed.
+    getSpaceLootEntitlement: () => ({
+      readSpaceLootInfo: (customInfo) => (customInfo && customInfo.evejsLoot) || {},
+      evaluateSpaceLootAccess: (activeSession, source) => {
+        if (typeof options.lootAccess === "function") {
+          return options.lootAccess(activeSession, source);
+        }
+        const mine = Number(source && source.ownerID) === 7;
+        return {
+          success: true,
+          entitled: mine,
+          requiresSuspectTimer: !mine,
+        };
+      },
+    }),
+    // The warning line a salvage run prints goes into local chat; the test
+    // records it instead of broadcasting anything.
+    getChatRuntime: () => ({
+      broadcastLocalMessage: (activeSession, message) => {
+        calls.warnings.push({ session: activeSession, message });
+        return { entry: { message } };
+      },
+    }),
     getSessionRegistry: () => ({
-      findSessionByCharacterID: (characterID) => (
-        Number(characterID) === 7 ? session : null
-      ),
+      findSessionByCharacterID: (characterID) => {
+        const id = Number(characterID);
+        if (id === 7) {
+          return session;
+        }
+        return secondShip && id === secondShip.characterID ? secondSession : null;
+      },
     }),
     getCharacterState: () => ({
       getActiveShipRecord: () => shipItem,
     }),
     getSpaceRuntime: () => ({}),
     getSimulationInventoryProjection: () => ({
-      findItemById: (itemID) => (Number(itemID) === 1000 ? shipItem : null),
+      findItemById: (itemID) => {
+        if (Number(itemID) === 1000) {
+          return shipItem;
+        }
+        return secondShipItem && Number(itemID) === secondShipItem.itemID
+          ? secondShipItem
+          : null;
+      },
       listContainerItems: () => containerItems,
     }),
     getItemStore: () => ({ ITEM_FLAGS: { CARGO_HOLD: CARGO_HOLD_FLAG } }),
@@ -368,7 +503,8 @@ function makeWorld(options = {}) {
   };
 
   return {
-    scene, deps, calls, shipEntity, drones, rocks, session, miningState, containerItems, shipItem,
+    scene, deps, calls, shipEntity, drones, rocks, wrecks, session, miningState,
+    containerItems, shipItem, secondShip, secondSession,
   };
 }
 
@@ -595,7 +731,7 @@ test("a player can switch automation off", () => {
   assert.equal(world.calls.mine.length, 0);
 });
 
-test("the chat overlay answers on /altmining and toggles the player state", () => {
+test("the chat overlay answers on /aud m and toggles the player state", () => {
   const world = makeWorld({
     drones: [makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 })],
   });
@@ -608,22 +744,25 @@ test("the chat overlay answers on /altmining and toggles the player state", () =
     executeChatCommand: () => ({ handled: false }),
   };
   chatCommand.install(upstream, { runtime, config });
-  assert.ok(upstream.AVAILABLE_SLASH_COMMANDS.includes("atm"));
-  assert.ok(upstream.AVAILABLE_SLASH_COMMANDS.includes("altmining"));
-  assert.ok(!upstream.AVAILABLE_SLASH_COMMANDS.includes("alternateminingdrones"),
+  assert.ok(upstream.AVAILABLE_SLASH_COMMANDS.includes("aud"));
+  assert.ok(!upstream.AVAILABLE_SLASH_COMMANDS.includes("altmining"),
+    "the mod answers to one name now");
+  assert.ok(!upstream.AVAILABLE_SLASH_COMMANDS.includes("advancedutilitydrones"),
     "the long spelling is gone");
-  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/atm"));
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud m"));
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud s"),
+    "the client's /help lists both menus");
   const chatHub = {
     sendSystemMessage: (session, message) => sent.push(message),
   };
-  const off = upstream.executeChatCommand(world.session, "/altmining off", chatHub, {});
+  const off = upstream.executeChatCommand(world.session, "/aud m off", chatHub, {});
   assert.equal(off.handled, true);
   assert.equal(sent.length, 1);
   assert.equal(runtime.playerStateSnapshot(7).enabled, false);
   const untouched = upstream.executeChatCommand(world.session, "/help", chatHub, {});
   assert.deepEqual(untouched, { handled: false });
-  const status = upstream.executeChatCommand(world.session, "/altmining status", chatHub, {});
-  assert.match(status.message, /AlternateMiningDrones v/);
+  const status = upstream.executeChatCommand(world.session, "/aud m status", chatHub, {});
+  assert.match(status.message, /AdvancedUtilityDrones v/);
 });
 
 test("the chat overlay answers on the dot prefix used by non-staff clients", () => {
@@ -644,7 +783,7 @@ test("the chat overlay answers on the dot prefix used by non-staff clients", () 
   // to the player, so it has to survive this path.
   const viaChatBody = upstream.executeChatCommand(
     world.session,
-    ".altmining range",
+    ".aud m range",
     null,
     { emitChatFeedback: false },
   );
@@ -653,7 +792,7 @@ test("the chat overlay answers on the dot prefix used by non-staff clients", () 
 
   const sent = [];
   const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
-  const on = upstream.executeChatCommand(world.session, ".altmining on", chatHub, {});
+  const on = upstream.executeChatCommand(world.session, ".aud m on", chatHub, {});
   assert.equal(on.handled, true);
   assert.equal(sent.length, 1);
   assert.equal(runtime.playerStateSnapshot(7).enabled, true);
@@ -664,10 +803,10 @@ test("the chat overlay answers on the dot prefix used by non-staff clients", () 
 
 test("configuration parsing validates ranges and modes", () => {
   const config = configModule.load(path.join(__dirname, ".."), {
-    EVEJS_ALT_MINING_DRONES_RANGE_MODE: "fixed",
-    EVEJS_ALT_MINING_DRONES_RANGE_METERS: "45000",
-    EVEJS_ALT_MINING_DRONES_TARGET_MODE: "focus",
-    EVEJS_ALT_MINING_DRONES_SCAN_INTERVAL_MS: "250",
+    EVEJS_ADVANCED_UTILITY_DRONES_RANGE_MODE: "fixed",
+    EVEJS_ADVANCED_UTILITY_DRONES_RANGE_METERS: "45000",
+    EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE: "focus",
+    EVEJS_ADVANCED_UTILITY_DRONES_SCAN_INTERVAL_MS: "250",
   });
   assert.equal(config.rangeMode, "fixed");
   assert.equal(config.rangeMeters, 45000);
@@ -676,9 +815,9 @@ test("configuration parsing validates ranges and modes", () => {
   assert.deepEqual(config.problems, []);
 
   const broken = configModule.load(path.join(__dirname, ".."), {
-    EVEJS_ALT_MINING_DRONES_RANGE_MODE: "fixed",
-    EVEJS_ALT_MINING_DRONES_TARGET_MODE: "sideways",
-    EVEJS_ALT_MINING_DRONES_SCAN_INTERVAL_MS: "10",
+    EVEJS_ADVANCED_UTILITY_DRONES_RANGE_MODE: "fixed",
+    EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE: "sideways",
+    EVEJS_ADVANCED_UTILITY_DRONES_SCAN_INTERVAL_MS: "10",
   });
   assert.equal(broken.problems.length, 3);
 });
@@ -687,7 +826,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
   const Module = require("node:module");
   const fs = require("node:fs");
   const os = require("node:os");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "alternateMiningDrones-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "advancedUtilityDrones-"));
   const write = (relative, body) => {
     const target = path.join(root, ...relative.split("/"));
     fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -752,7 +891,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
   );
 
   write(
-    "config/alternateMiningDrones.json",
+    "config/advancedUtilityDrones.json",
     JSON.stringify({ postLaunchDelayMs: 0 }, null, 2),
   );
 
@@ -796,30 +935,30 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     const drone2 = world.scene.dynamicEntities.get(2002);
     droneRuntime.commandReturnBay(world.session, [2001]);
     assert.ok(
-      drone1.altMiningDronesPlayerParkedAtMs > 0,
+      drone1.advancedUtilityDronesPlayerParkedAtMs > 0,
       "a manual order must be seen as a takeover",
     );
-    drone2.altMiningDronesPlayerParkedAtMs = 0;
+    drone2.advancedUtilityDronesPlayerParkedAtMs = 0;
     commandScope.run(() => droneRuntime.commandReturnBay(world.session, [2002]));
     assert.equal(
-      drone2.altMiningDronesPlayerParkedAtMs,
+      drone2.advancedUtilityDronesPlayerParkedAtMs,
       0,
       "the mod's own recall must not look like a takeover",
     );
 
     // Launching again hands the drone back to the automation.
     droneRuntime.launchDronesForSession(world.session, []);
-    assert.equal(drone1.altMiningDronesPlayerParkedAtMs, 0);
+    assert.equal(drone1.advancedUtilityDronesPlayerParkedAtMs, 0);
     assert.ok(droneRuntime.calls.some((entry) => entry.launch));
 
     const chatCommands = require(chatCommandsPath);
-    assert.ok(chatCommands.AVAILABLE_SLASH_COMMANDS.includes("altmining"));
-    assert.ok(!chatCommands.AVAILABLE_SLASH_COMMANDS.includes("alternateminingdrones"),
+    assert.ok(chatCommands.AVAILABLE_SLASH_COMMANDS.includes("aud"));
+    assert.ok(!chatCommands.AVAILABLE_SLASH_COMMANDS.includes("advancedutilitydrones"),
       "the long spelling is gone");
     const sent = [];
     const result = chatCommands.executeChatCommand(
       world.session,
-      "/altmining focus",
+      "/aud m focus",
       { sendSystemMessage: (session, message) => sent.push(message) },
       {},
     );
@@ -832,8 +971,8 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     // error's message.
     const chatRuntime = require(chatRuntimePath);
     assert.throws(
-      () => chatRuntime.broadcastLocalMessage(world.session, "!altmining spread"),
-      (error) => /^AlternateMiningDrones/.test(error.message),
+      () => chatRuntime.broadcastLocalMessage(world.session, "!aud spread"),
+      (error) => /^AdvancedUtilityDrones/.test(error.message),
     );
     assert.equal(chatRuntime.calls.length, 0, "the trigger must never be broadcast");
     chatRuntime.broadcastLocalMessage(world.session, "hello belt");
@@ -878,7 +1017,7 @@ test("an invalid configuration leaves the loader inert", () => {
   delete globalThis[loaderModule.INSTALL_FLAG];
   const state = loaderModule.install({
     runtimeRoot: modDir,
-    environment: { EVEJS_ALT_MINING_DRONES_RANGE_MODE: "sideways" },
+    environment: { EVEJS_ADVANCED_UTILITY_DRONES_RANGE_MODE: "sideways" },
   });
   assert.equal(state.active, false);
   assert.equal(state.reason, "invalid-config");
@@ -887,7 +1026,7 @@ test("an invalid configuration leaves the loader inert", () => {
 
 test("a short key in the JSON config reaches the same setting as the long one", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-config-"));
-  const configPath = path.join(dir, "alternateMiningDrones.json");
+  const configPath = path.join(dir, "advancedUtilityDrones.json");
   fs.writeFileSync(configPath, JSON.stringify({
     verbose: true,
     targetMode: "focus",
@@ -900,11 +1039,11 @@ test("a short key in the JSON config reaches the same setting as the long one", 
   assert.equal(short.minHoldFreeVolumeM3, 1);
   assert.equal(short.scanIntervalMs, 900);
   assert.deepEqual(short.problems, []);
-  assert.ok(short.playersFilename.endsWith("alternateMiningDrones.players.json"));
+  assert.ok(short.playersFilename.endsWith("advancedUtilityDrones.players.json"));
 
   fs.writeFileSync(configPath, JSON.stringify({
-    EVEJS_ALT_MINING_DRONES_VERBOSE: "false",
-    EVEJS_ALT_MINING_DRONES_TARGET_MODE: "spread",
+    EVEJS_ADVANCED_UTILITY_DRONES_VERBOSE: "false",
+    EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE: "spread",
   }), "utf8");
   const long = configModule.load(modDir, {}, { runtimeRoot: dir, configPath });
   assert.equal(long.verbose, false);
@@ -1104,7 +1243,7 @@ test("the player-control policy decides which manual orders park a drone", () =>
     "an ordinary order is not a takeover under the recall policy",
   );
   assert.equal(runtime._testing.notePlayerCommand("returnBay", world.session, [2001]), 1);
-  world.scene.dynamicEntities.get(2001).altMiningDronesPlayerParkedAtMs = 0;
+  world.scene.dynamicEntities.get(2001).advancedUtilityDronesPlayerParkedAtMs = 0;
   players.set(7, { playerControlPolicy: "off" });
   assert.equal(runtime._testing.notePlayerCommand("returnHome", world.session, [2001]), 0);
   fs.rmSync(store.dir, { recursive: true, force: true });
@@ -1154,10 +1293,18 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // error.message back to the sender alone, so the line never reaches anybody
   // else. Throwing is the reply, not a failure.
   assert.throws(
-    () => upstream.broadcastLocalMessage(world.session, "!altmining focus"),
-    (error) => /^AlternateMiningDrones/.test(error.message),
+    () => upstream.broadcastLocalMessage(world.session, "!aud m focus"),
+    (error) => /^AdvancedUtilityDrones/.test(error.message),
   );
   assert.equal(broadcast.length, 0, "the trigger must never be broadcast");
+  assert.equal(runtime.getPlayerState(7).targetMode, "focus");
+
+  // The same command with no kind answers with the two menus, and changes
+  // nothing.
+  assert.throws(
+    () => upstream.broadcastLocalMessage(world.session, "!aud"),
+    (error) => /pick the drones to control/.test(error.message),
+  );
   assert.equal(runtime.getPlayerState(7).targetMode, "focus");
 
   // "!amd" is not this mod's spelling any more: the abbreviation is claimed by
@@ -1174,16 +1321,22 @@ test("a plain chat line drives the mod so a character without staff rights can u
 
 test("the plain-chat trigger only answers its own name, and only when it is enabled", () => {
   const config = makeConfig();
-  assert.equal(chatCommand.matchTrigger("!altmining", config), "");
+  assert.equal(chatCommand.matchTrigger("!aud", config), "");
+  assert.equal(chatCommand.matchTrigger("!aud m off", config), "m off");
+  assert.equal(chatCommand.matchTrigger("!aud s foreign warn", config), "s foreign warn");
   assert.equal(chatCommand.matchTrigger("!amd   spread", config), null,
     "the amd abbreviation is not this mod's spelling any more");
-  assert.equal(chatCommand.matchTrigger("!/altmining status", config), null);
+  assert.equal(chatCommand.matchTrigger("!/aud m status", config), null);
   assert.equal(chatCommand.matchTrigger("!hello there", config), null);
+  // The retired names are matched so the rename notice can be printed, and the
+  // name is kept in front of the reply so the router knows which one was typed.
+  assert.equal(chatCommand.matchTrigger("!atm off", config), "atm off");
+  assert.equal(chatCommand.matchTrigger("!altmining focus", config), "altmining focus");
   // A slash or dot line is the slash.SlashCmd path, and must not be consumed twice.
-  assert.equal(chatCommand.matchTrigger("/altmining status", config), null);
-  assert.equal(chatCommand.matchTrigger(".altmining status", config), null);
+  assert.equal(chatCommand.matchTrigger("/aud m status", config), null);
+  assert.equal(chatCommand.matchTrigger(".aud m status", config), null);
   assert.equal(
-    chatCommand.matchTrigger("!altmining on", makeConfig({ chatTrigger: false })),
+    chatCommand.matchTrigger("!aud on", makeConfig({ chatTrigger: false })),
     null,
   );
 });
@@ -1200,8 +1353,8 @@ test("the plain-chat trigger is inert when it is switched off", () => {
     },
   };
   plainChat.install(upstream, { runtime, config, chatCommand });
-  upstream.broadcastLocalMessage(world.session, "!altmining focus");
-  assert.deepStrictEqual(broadcast, ["!altmining focus"]);
+  upstream.broadcastLocalMessage(world.session, "!aud focus");
+  assert.deepStrictEqual(broadcast, ["!aud focus"]);
   assert.equal(runtime.getPlayerState(7).targetMode, config.targetMode);
 });
 
@@ -1216,23 +1369,40 @@ test("the chat overlay covers threshold, control and resume", () => {
   const sent = [];
   const chatHub = { sendSystemMessage: (session, message) => sent.push(message) };
 
-  const removed = upstream.executeChatCommand(world.session, "/altmining hold all", chatHub, {});
+  const removed = upstream.executeChatCommand(world.session, "/aud m hold all", chatHub, {});
   assert.match(removed.message, /unknown option "hold"/);
-  upstream.executeChatCommand(world.session, "/altmining threshold 4", chatHub, {});
-  upstream.executeChatCommand(world.session, "/altmining control recall", chatHub, {});
+  upstream.executeChatCommand(world.session, "/aud m threshold 4", chatHub, {});
+  upstream.executeChatCommand(world.session, "/aud m control recall", chatHub, {});
   const state = runtime.getPlayerState(7);
   assert.equal(state.minHoldFreeVolumeM3, 4);
   assert.equal(state.playerControlPolicy, "recall");
   assert.equal(state.holdStopMode, undefined);
 
-  const status = upstream.executeChatCommand(world.session, "/altmining status", chatHub, {});
+  const status = upstream.executeChatCommand(world.session, "/aud m status", chatHub, {});
   assert.match(status.message, /threshold\s*: 4 m3/);
   assert.match(status.message, /takeover\s*: recall/);
 
-  upstream.executeChatCommand(world.session, "/altmining resume", chatHub, {});
-  const reset = upstream.executeChatCommand(world.session, "/altmining reset", chatHub, {});
+  upstream.executeChatCommand(world.session, "/aud m resume", chatHub, {});
+
+  // "reset" inside a menu clears that kind and nothing else: the mining keys
+  // go, while the takeover setting the same menu set is shared and stays.
+  const reset = upstream.executeChatCommand(world.session, "/aud m reset", chatHub, {});
   assert.equal(reset.handled, true);
+  assert.match(reset.message, /the mining settings were cleared/);
+  const afterKindReset = runtime.getPlayerState(7);
+  assert.equal(afterKindReset.playerControlPolicy, "recall");
+  assert.equal(afterKindReset.minHoldFreeVolumeM3, 4,
+    "the threshold is shared, so a kind reset leaves it alone");
+  assert.equal(afterKindReset.source, "player",
+    "the shared keys keep the entry alive");
+
+  // "/aud reset" is the one that clears the whole entry, shared keys and all.
+  const resetAll = upstream.executeChatCommand(world.session, "/aud reset", chatHub, {});
+  assert.equal(resetAll.handled, true);
+  assert.match(resetAll.message, /all your personal settings were cleared/);
   assert.equal(runtime.getPlayerState(7).source, "config");
+  assert.equal(runtime.getPlayerState(7).minHoldFreeVolumeM3, config.minHoldFreeVolumeM3,
+    "the shared threshold is only cleared by /aud reset");
   fs.rmSync(store.dir, { recursive: true, force: true });
 });
 
@@ -1388,7 +1558,7 @@ test("filter: the players file keeps the queue, the validator trims it", () => {
   });
   runtime.setPlayerOreFilter(7, [" Veldspar ", "veldsPar", "PYROXERES", "moon"]);
   const saved = JSON.parse(fs.readFileSync(store.file, "utf8"));
-  assert.deepEqual(saved.characters["7"].oreFilter, ["veldspar", "pyroxeres", "moon"]);
+  assert.deepEqual(saved.characters["7"].mining.oreFilter, ["veldspar", "pyroxeres", "moon"]);
 
   // A file 1.2.2 wrote holds three per-kind buckets; they still mean the queue
   // they describe, with an empty bucket standing for the whole kind.
@@ -1396,7 +1566,7 @@ test("filter: the players file keeps the queue, the validator trims it", () => {
     oreFilter: { ore: [" Veldspar ", "any"], ice: [], moon: ["Bitumens"], gas: ["nope"] },
   });
   assert.deepEqual(
-    legacy.oreFilter,
+    legacy.mining.oreFilter,
     ["ore:veldspar", "ore", "ice", "moon:bitumens"],
     "the old buckets are read as the queue, and an unknown bucket is dropped",
   );
@@ -1405,7 +1575,7 @@ test("filter: the players file keeps the queue, the validator trims it", () => {
     oreFilter: ["ok", "waytoolongforapatternxxxxxxxxxxxx", "!!!", "ice", "any", "1231"],
   });
   assert.deepEqual(
-    normalized.oreFilter,
+    normalized.mining.oreFilter,
     ["ok", "ice", "*", "1231"],
     "junk and over-long names are dropped; a kind word, \"*\" and a type ID stay",
   );
@@ -1730,7 +1900,7 @@ test("filter: a hand-ordered drone is not re-targeted by a queue change", () => 
     makeRock(3002, "ore", PYROXERES_TYPE, 9000),
   ];
   const drone = makeMiningDroneOnRock(2001, 3002);
-  drone.altMiningDronesPlayerParkedAtMs = 900;
+  drone.advancedUtilityDronesPlayerParkedAtMs = 900;
   const world = makeWorld({ rocks, drones: [drone] });
   const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
   runtime.onSceneTick(world.scene, 1000);
@@ -1761,7 +1931,7 @@ test("chat: filter takes add, move, del and clear, and nothing else", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
   const queue = () => runtime.getPlayerState(7).oreFilter;
 
   // One command, one queue: the order typed is the order mined, printed per kind
@@ -1780,7 +1950,7 @@ test("chat: filter takes add, move, del and clear, and nothing else", () => {
   // of the line is queued and a warning line says what was passed over.
   const skipped = run("filter add 16262, ice, bitumens");
   assert.match(skipped.message, /\n +warning: "ice" names a whole kind of rock/);
-  assert.match(skipped.message, /\/atm filter clear ice empties the ice list/);
+  assert.match(skipped.message, /\/aud m filter clear ice empties the ice list/);
   assert.match(skipped.message, /\n {2}ice {4}: 1\. blue ice, 2\. Glacial Mass\n/,
     "an entry queued as a type ID reads back as the rock it stands for");
   assert.deepEqual(queue(), ["veldspar", "pyroxeres", "blue ice", "16262", "bitumens"]);
@@ -1791,7 +1961,7 @@ test("chat: filter takes add, move, del and clear, and nothing else", () => {
   const orphan = run("filter add veldspar, 1, pyroxeres, dark ochre");
   assert.match(orphan.message, /added dark ochre\./);
   assert.match(orphan.message, /warning: "1" is not a rock's type ID/);
-  assert.match(orphan.message, /\/atm filter move <name> 1/);
+  assert.match(orphan.message, /\/aud m filter move <name> 1/);
   assert.match(
     orphan.message,
     /warning: veldspar, pyroxeres are already in the queue and keep the place they have/,
@@ -1928,7 +2098,7 @@ test("chat: a rock whose name is two words stays one entry", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
   const queue = () => runtime.getPlayerState(7).oreFilter;
 
   // Typed without a comma, the words that name one rock stay together: this is
@@ -1969,12 +2139,12 @@ test("chat: the forms that left the grammar say what took their place", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
 
   // A kind word is no longer a way into the queue - "clear" is the command that
   // empties one kind's list, and the warning line says so.
   assert.match(run("filter add ice").message, /"ice" names a whole kind of rock/);
-  assert.match(run("filter del ice").message, /\/atm filter clear ice empties the ice list/);
+  assert.match(run("filter del ice").message, /\/aud m filter clear ice empties the ice list/);
   assert.match(run("filter add any").message, /"any" stands for every rock/);
   assert.match(run("filter add *").message, /"\*" stands for every rock/);
   assert.equal(runtime.getPlayerState(7).oreFilter, null, "none of those queued anything");
@@ -1991,7 +2161,7 @@ test("chat: the forms that left the grammar say what took their place", () => {
   assert.match(run("filter ice add veldspar").message, /is a kind of rock, not a command/);
 
   // The list of what is around you keeps a command of its own.
-  assert.match(run("filter list").message, /"\/atm list" shows the rocks in range/);
+  assert.match(run("filter list").message, /"\/aud m list" shows the rocks in range/);
 
   // Anything else says how to add a name instead of guessing at it.
   assert.match(run("filter veldspar").message, /filter takes add, move, del, clear, grade/);
@@ -2002,56 +2172,56 @@ test("chat: the forms that left the grammar say what took their place", () => {
   assert.match(shown.message, /nothing is queued/);
   assert.match(shown.message, /fallback: any/);
   assert.match(shown.message, /grade {3}: off/);
-  assert.match(shown.message, /commands: "\/atm filter help"/);
+  assert.match(shown.message, /commands: "\/aud m filter help"/);
 });
 
-test("chat: /atm help and /atm filter help are two lists", () => {
+test("chat: /aud m help and /aud m filter help are two lists", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
 
-  // The top-level list is the commands that follow "/atm" and nothing else: it
+  // The top-level list is the commands that follow "/aud m" and nothing else: it
   // points at the filter's own list instead of carrying it along.
   const top = run("help").message;
-  assert.match(top, /the commands that follow \/atm/);
-  assert.match(top, /\/atm filter help/);
-  assert.match(top, /"\/atm f \.\.\." is the same as "\/atm filter \.\.\."/,
+  assert.match(top, /the commands that follow \/aud m/);
+  assert.match(top, /\/aud m filter help/);
+  assert.match(top, /"\/aud m f \.\.\." is the same as "\/aud m filter \.\.\."/,
     "the top-level list names the filter's short spelling");
   assert.equal(top.includes("filter add"), false,
     "the filter's own commands no longer pad the top-level list");
   assert.equal(top.includes("filter grade"), false);
 
-  // "/atm filter help" carries them in the same shape as the list above: one
+  // "/aud m filter help" carries them in the same shape as the list above: one
   // line per command, the line is what to type, and the detail lines sit under
   // it indented by four spaces - no paragraphs.
   const filterHelp = run("filter help").message;
-  assert.match(filterHelp, /the commands that follow \/atm filter/);
-  assert.match(filterHelp, /\n {2}\/atm filter add <name\|id>/);
-  assert.match(filterHelp, /\n {2}\/atm filter move <name\|id> <place>/);
-  assert.match(filterHelp, /\n {2}\/atm filter del <name\|id>/);
-  assert.match(filterHelp, /\n {2}\/atm filter clear ore\|ice\|moon/);
-  assert.match(filterHelp, /\n {2}\/atm filter grade on\|off/);
-  assert.match(filterHelp, /\n {2}\/atm filter fallback any\|idle/);
-  assert.match(filterHelp, /\n {2}\/atm filter - show the queue/);
-  assert.match(filterHelp, /\n {2}\/atm filter help - this list/);
-  assert.match(filterHelp, /\n {2}"\/atm f <arguments>" is the same as/);
+  assert.match(filterHelp, /the commands that follow \/aud m filter/);
+  assert.match(filterHelp, /\n {2}\/aud m filter add <name\|id>/);
+  assert.match(filterHelp, /\n {2}\/aud m filter move <name\|id> <place>/);
+  assert.match(filterHelp, /\n {2}\/aud m filter del <name\|id>/);
+  assert.match(filterHelp, /\n {2}\/aud m filter clear ore\|ice\|moon/);
+  assert.match(filterHelp, /\n {2}\/aud m filter grade on\|off/);
+  assert.match(filterHelp, /\n {2}\/aud m filter fallback any\|idle/);
+  assert.match(filterHelp, /\n {2}\/aud m filter - show the queue/);
+  assert.match(filterHelp, /\n {2}\/aud m filter help - this list/);
+  assert.match(filterHelp, /\n {2}"\/aud m f <arguments>" is the same as/);
   const widest = filterHelp.split("\n").reduce((most, line) => Math.max(most, line.length), 0);
   assert.ok(widest <= 84, "the filter list stays as narrow as the top-level one (" + widest + ")");
   assert.equal(filterHelp.includes("first entry mined first:"), false,
     "the paragraph under \"add\" is gone");
 
   // Reading the queue still says where the list of commands is.
-  assert.match(run("filter").message, /\/atm filter help/);
+  assert.match(run("filter").message, /\/aud m filter help/);
 });
 
 test("chat: f is the filter's short spelling", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
 
-  // "/atm f" is "/atm filter" under a shorter name: the queue read back, the
+  // "/aud m f" is "/aud m filter" under a shorter name: the queue read back, the
   // same verbs, the same help, the same wording.
   assert.equal(run("f").message, run("filter").message);
   assert.equal(run("f help").message, run("filter help").message);
@@ -2066,14 +2236,14 @@ test("chat: f is the filter's short spelling", () => {
   assert.match(run("f fallback idle").message, /filter fallback: idle/);
   assert.match(run("f del pyroxeres").message, /dropped pyroxeres/);
   assert.match(run("f clear ore").message, /queue is now empty/);
-  assert.match(run("f bogus").message, /"\/atm f" is the same command/);
+  assert.match(run("f bogus").message, /"\/aud m f" is the same command/);
 
   // The short spelling is a filter verb, not a top-level command of its own:
-  // "/atm fallback" still means what it always did, and only "filter" grew one.
+  // "/aud m fallback" still means what it always did, and only "filter" grew one.
   assert.match(run("fallback idle").message, /filter fallback: idle/);
-  assert.equal(chatCommand.matchCommand("/atm f", config), "f");
-  assert.equal(chatCommand.matchCommand("/atm fallback", config), "fallback");
-  assert.equal(chatCommand.matchCommand("/atm fill", config), "fill");
+  assert.equal(chatCommand.matchCommand("/aud m f", config), "m f");
+  assert.equal(chatCommand.matchCommand("/aud m fallback", config), "m fallback");
+  assert.equal(chatCommand.matchCommand("/aud m fill", config), "m fill");
 });
 
 test("chat: switching the grade preference re-tasks working drones", () => {
@@ -2138,7 +2308,7 @@ test("chat: every filter command prints the lists the numbers count in", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
 
   // One line per kind of rock, and the number restarts in every list, because
   // that is the number "move" takes.
@@ -2173,7 +2343,7 @@ test("chat: an entry that matches no rock gets a warning line", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
 
   const typo = run("filter add veldsparx");
   assert.match(
@@ -2199,7 +2369,7 @@ test("chat: move reorders with the same numbers the reply prints", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
   const queue = () => runtime.getPlayerState(7).oreFilter;
 
   run("filter add veldspar pyroxeres blue ice bitumens");
@@ -2309,7 +2479,7 @@ test("chat: the grade preference is per character and off unless asked for", () 
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "m " + line);
 
   assert.match(run("filter grade").message, /filter grade: off/);
   assert.match(run("filter grade on").message, /filter grade: on/);
@@ -2328,37 +2498,67 @@ test("chat: the grade preference is per character and off unless asked for", () 
 
   // The players file takes the same spellings a config file does, and an entry
   // that only holds it can be dropped again by setting it to null.
-  assert.equal(playerSettings.normalizeEntry({ filterGrade: "on" }).filterGrade, true);
+  assert.equal(playerSettings.normalizeEntry({ filterGrade: "on" }).mining.filterGrade, true);
   assert.equal(playerSettings.normalizeEntry({ filterGrade: null }), null);
 });
-test("chat: /atm, /altmining and their ! forms reach the mod, and the retired spellings do not", () => {
+test("chat: the kind comes first, and the retired spellings only say so", () => {
   const world = makeWorld();
   const config = makeConfig();
   const runtime = createRuntime({ config, deps: world.deps });
-  assert.equal(chatCommand.matchCommand("/atm status", config), "status");
-  assert.equal(chatCommand.matchCommand("!atm status", config), "status");
-  assert.equal(chatCommand.matchCommand("/altmining status", config), "status");
-  assert.equal(chatCommand.matchTrigger("!atm filter ore clear", config), "filter ore clear");
+  // One name, two scopes: the kind is the first word after /aud, and the rest
+  // of the line is that kind's menu, verbatim.
+  assert.equal(chatCommand.matchCommand("/aud m status", config), "m status");
+  assert.equal(chatCommand.matchCommand("!aud status", config), "status");
+  assert.equal(chatCommand.matchCommand("/aud s", config), "s");
+  assert.equal(chatCommand.matchTrigger("!aud filter ore clear", config), "filter ore clear");
+
+  // A bare /aud is the two menus and nothing else: no kind is guessed, so a
+  // verb typed without one is answered with both spellings of itself.
+  assert.equal(chatCommand.matchCommand("/aud", config), "");
+  const menu = chatCommand.handleCommand(runtime, config, world.session, "");
+  assert.match(menu.message, /pick the drones to control/);
+  assert.match(menu.message, /\/aud m \[command\]/);
+  assert.match(menu.message, /\/aud s \[command\]/);
+  const ambiguous = chatCommand.handleCommand(runtime, config, world.session, "spread");
+  assert.match(ambiguous.message, /\/aud m spread\" for the mining drones/);
+  assert.match(ambiguous.message, /\/aud s spread\" for the salvage drones/);
+  assert.equal(runtime.getPlayerState(7).targetMode, "spread",
+    "a verb with no kind changes nothing");
+
+  // The retired spellings are matched, so a player whose fingers still type
+  // them is told about the rename instead of being ignored - and the name stays
+  // in front of the reply so the router knows which one was typed.
+  assert.equal(chatCommand.matchTrigger("!atm", config), "atm");
   assert.equal(
-    chatCommand.matchCommand("/alternateminingdrones status", config),
+    chatCommand.matchTrigger("!altmining filter ore clear", config),
+    "altmining filter ore clear",
+  );
+  assert.equal(
+    chatCommand.matchCommand("/advancedutilitydrones status", config),
     null,
-    "the long spelling is gone - /atm and /altmining are the whole set",
+    "the long spelling is gone - /aud is the whole set",
   );
   assert.equal(
     chatCommand.matchCommand("/somethingelse status", config),
     null,
     "another command still goes to the vendor handler",
   );
+  const renamed = chatCommand.handleCommand(runtime, config, world.session, "atm off");
+  assert.match(renamed.message, /was renamed/);
+  assert.match(renamed.message, /\/aud m/);
+  assert.match(renamed.message, /\/aud s/);
+  assert.equal(runtime.getPlayerState(7).enabled, true,
+    "the retired spelling says its piece and does nothing else");
 
-  const redirected = chatCommand.handleCommand(runtime, config, world.session, "ore veldspar");
+  const redirected = chatCommand.handleCommand(runtime, config, world.session, "m ore veldspar");
   assert.match(redirected.message, /is a kind of rock, not a command/);
-  assert.match(redirected.message, /\/atm filter clear ore/,
+  assert.match(redirected.message, /\/aud m filter clear ore/,
     "the redirect names the command that still takes a kind word");
   assert.equal(/filter add ore/.test(redirected.message), false,
     "and not the spelling 1.2.9 stopped accepting");
   assert.equal(runtime.getPlayerState(7).oreFilter, null, "the old form changes nothing");
 
-  const shown = chatCommand.handleCommand(runtime, config, world.session, "filter ore");
+  const shown = chatCommand.handleCommand(runtime, config, world.session, "m filter ore");
   assert.match(shown.message, /is a kind of rock, not a command/);
 });
 test("chat: fallback is per character and can go back to the server default", () => {
@@ -2367,14 +2567,14 @@ test("chat: fallback is per character and can go back to the server default", ()
   const runtime = createRuntime({ config, deps: world.deps });
   assert.equal(runtime.getPlayerState(7).filterFallback, "any");
 
-  const idle = chatCommand.handleCommand(runtime, config, world.session, "fallback idle");
+  const idle = chatCommand.handleCommand(runtime, config, world.session, "m " + "fallback idle");
   assert.match(idle.message, /fallback: idle/);
   assert.equal(runtime.getPlayerState(7).filterFallback, "idle");
 
-  chatCommand.handleCommand(runtime, config, world.session, "filter fallback default");
+  chatCommand.handleCommand(runtime, config, world.session, "m " + "filter fallback default");
   assert.equal(runtime.getPlayerState(7).filterFallback, "any");
 
-  const bad = chatCommand.handleCommand(runtime, config, world.session, "fallback sideways");
+  const bad = chatCommand.handleCommand(runtime, config, world.session, "m " + "fallback sideways");
   assert.match(bad.message, /must be "any", "idle" or "default"/);
 });
 
@@ -2391,17 +2591,17 @@ test("chat: list names the ore around the ship, status shows the filter", () => 
   assert.match(status, /filter\s+: veldspar \(fallback any/u);
   assert.match(status, /2 of 3 rocks in range match/u);
 
-  const list = chatCommand.handleCommand(runtime, config, world.session, "list");
+  const list = chatCommand.handleCommand(runtime, config, world.session, "m " + "list");
   assert.match(list.message, /Veldspar/);
   assert.match(list.message, /Blue Ice/);
   assert.match(list.message, /2 rocks, 200 m3 left, nearest 9500 m/u);
   assert.match(list.message, /\* ore/u, "the rock the filter already matches is marked");
 
-  const iceOnly = chatCommand.handleCommand(runtime, config, world.session, "list ice");
+  const iceOnly = chatCommand.handleCommand(runtime, config, world.session, "m " + "list ice");
   assert.match(iceOnly.message, /Blue Ice/);
   assert.equal(/Veldspar/u.test(iceOnly.message), false);
 
-  const badScope = chatCommand.handleCommand(runtime, config, world.session, "list gas");
+  const badScope = chatCommand.handleCommand(runtime, config, world.session, "m " + "list gas");
   assert.match(badScope.message, /list takes "ore", "ice" or "moon"/);
 });
 
@@ -2409,11 +2609,11 @@ test("chat: list and filter still answer when players may not change settings", 
   const world = makeWorld();
   const config = makeConfig({ allowPlayerToggle: false });
   const runtime = createRuntime({ config, deps: world.deps });
-  const list = chatCommand.handleCommand(runtime, config, world.session, "list");
+  const list = chatCommand.handleCommand(runtime, config, world.session, "m " + "list");
   assert.match(list.message, /mineable rocks in range/);
-  const shown = chatCommand.handleCommand(runtime, config, world.session, "filter");
+  const shown = chatCommand.handleCommand(runtime, config, world.session, "m " + "filter");
   assert.match(shown.message, /nothing is queued/);
-  const refused = chatCommand.handleCommand(runtime, config, world.session, "filter ore add 1 veldspar");
+  const refused = chatCommand.handleCommand(runtime, config, world.session, "m " + "filter ore add 1 veldspar");
   assert.match(refused.message, /disabled by the server/);
 });
 
@@ -2454,7 +2654,7 @@ test("copy: the identifier takes an id, a User: label or a unique name", () => {
   assert.equal(copy.hasCopyableSettings({ characterName: "x", targetMode: "focus" }), true);
 });
 
-test("chat: /atm copy finds a character and hands their setup over", () => {
+test("chat: /aud m copy finds a character and hands their setup over", () => {
   const store = makePlayersFile("copy");
   const players = playerSettings.createPlayerStore({ file: store.file });
   const world = makeWorld({
@@ -2465,19 +2665,19 @@ test("chat: /atm copy finds a character and hands their setup over", () => {
   const lead = { characterID: 8, characterName: "Fleet Lead" };
   const alt = { characterID: 7, characterName: "Alt Two" };
 
-  chatCommand.handleCommand(runtime, config, lead, "focus");
-  chatCommand.handleCommand(runtime, config, lead, "threshold 3");
-  chatCommand.handleCommand(runtime, config, lead, "range 45000");
-  chatCommand.handleCommand(runtime, config, lead, "filter add pyroxeres veldspar");
-  chatCommand.handleCommand(runtime, config, lead, "fallback idle");
+  chatCommand.handleCommand(runtime, config, lead, "m " + "focus");
+  chatCommand.handleCommand(runtime, config, lead, "m " + "threshold 3");
+  chatCommand.handleCommand(runtime, config, lead, "m " + "range 45000");
+  chatCommand.handleCommand(runtime, config, lead, "m " + "filter add pyroxeres veldspar");
+  chatCommand.handleCommand(runtime, config, lead, "m " + "fallback idle");
   runtime.setPlayerControlPolicy(7, "off", { characterName: "Alt Two" });
 
-  // "/atm copy" on its own is the shape of the command and nothing else, and
+  // "/aud m copy" on its own is the shape of the command and nothing else, and
   // the roster answers to "copy list" so a bare copy stays short.
   const usage = chatCommand.handleCommand(runtime, config, alt, "copy");
   assert.match(usage.message, /part of a name is enough/);
-  assert.match(usage.message, /\/atm copy User:140000005/);
-  assert.match(usage.message, /\/atm copy list \[name\]/);
+  assert.match(usage.message, /\/aud copy User:140000005/);
+  assert.match(usage.message, /\/aud copy list \[name\]/);
   assert.equal(/Fleet Lead/.test(usage.message), false, "a bare copy lists nobody");
 
   const listed = chatCommand.handleCommand(runtime, config, alt, "copy list");
@@ -2556,6 +2756,350 @@ test("chat: /atm copy finds a character and hands their setup over", () => {
   assert.match(offListing.message, /disabled by the server/,
     "allowPlayerCopy: false removes the listing too");
 
+  fs.rmSync(store.dir, { recursive: true, force: true });
+});
+// ---------------------------------------------------------------------------
+// Salvage: another kind of drone, another set of wrecks
+// ---------------------------------------------------------------------------
+
+test("salvage: only the pilot's own wreck is worked, and the nearest one first", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 5000, 99)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  assert.equal(runtime.getSalvageState(7).foreign, "off",
+    "own wrecks only is the default, as the game's own auto-salvage is");
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001]);
+  assert.equal(world.calls.warnings.length, 0,
+    "a wreck that is skipped in silence must not be announced");
+  assert.equal(world.calls.mine.length, 0, "no rock, no mining order");
+
+  // A nearer wreck of the pilot's own wins over a further one.
+  const nearer = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 30000, 7), makeWreck(4002, 5000, 7)],
+  });
+  const nearerRuntime = createRuntime({ config: makeConfig(), deps: nearer.deps });
+  nearerRuntime.onSceneTick(nearer.scene, 1000);
+  assert.deepEqual(nearer.calls.salvage.map((call) => call.targetID), [4002]);
+});
+
+test("salvage: distance farthest starts at the far end of the field", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 30000, 7)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  assert.equal(runtime.getSalvageState(7).distance, "nearest");
+  assert.match(runtime.setPlayerSalvageDistance(7, "farthest") ? "ok" : "", /ok/);
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4002],
+    "farthest first is for a pilot clearing a belt from the far end");
+});
+
+test("salvage: another pilot's wreck is worked, and warned about once per launch", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4002, 5000, 99)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerSalvageForeign(7, "warn");
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4002]);
+  assert.equal(world.calls.warnings.length, 1);
+  assert.match(world.calls.warnings[0].message, /^AdvancedUtilityDrones warning: wreck 4002/);
+  assert.match(world.calls.warnings[0].message, /belongs to character 99/);
+  assert.match(world.calls.warnings[0].message, /salvaging it makes you a suspect/);
+  assert.match(world.calls.warnings[0].message, /"\/aud s foreign off"/);
+
+  // The same wreck on the next scan is not announced a second time: the warning
+  // is per launch, not per scan.
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.calls.warnings.length, 1);
+  assert.equal(world.calls.salvage.length, 2, "the drones are still sent to work it");
+
+  // Launching them again is a fresh start, which is when the pilot is told
+  // again - the operator's own words: every time the drones go out.
+  runtime.resumeDrones(world.session, "salvage");
+  runtime.onSceneTick(world.scene, 3000);
+  assert.equal(world.calls.warnings.length, 2);
+
+  // "allow" works the same wreck without a word.
+  const quiet = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4002, 5000, 99)],
+  });
+  const quietRuntime = createRuntime({ config: makeConfig(), deps: quiet.deps });
+  quietRuntime.setPlayerSalvageForeign(7, "allow");
+  quietRuntime.onSceneTick(quiet.scene, 1000);
+  assert.deepEqual(quiet.calls.salvage.map((call) => call.targetID), [4002]);
+  assert.equal(quiet.calls.warnings.length, 0);
+});
+
+test("salvage: a wreck the safety light refuses is skipped, with a warning", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 5000, 99)],
+    lootAccess: () => ({
+      success: false,
+      errorMsg: "SafetyActivated",
+      entitled: false,
+      requiresSuspectTimer: false,
+    }),
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerSalvageForeign(7, "allow");
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.salvage.length, 0,
+    "a wreck the loot rules refuse is never sent a drone, whatever \"foreign\" says");
+  assert.equal(world.calls.warnings.length, 2, "one line per wreck, once");
+  assert.match(world.calls.warnings[0].message, /safety light will not allow/);
+  assert.match(world.calls.warnings[0].message, /Set the light to yellow/);
+
+  // Still once per wreck per launch, not once per scan.
+  runtime.onSceneTick(world.scene, 2000);
+  assert.equal(world.calls.warnings.length, 2);
+  runtime.resumeDrones(world.session, "salvage");
+  runtime.onSceneTick(world.scene, 3000);
+  assert.equal(world.calls.warnings.length, 4);
+});
+
+test("salvage: a hull that launches fifty drones puts every one of them to work", () => {
+  const wrecks = () => [makeWreck(4001, 9000, 7), makeWreck(4002, 20000, 7)];
+
+  // spread: the near wreck fills up and the rest spill onto the far one, instead
+  // of a claim map made for a five-drone squadron leaving the rest idle.
+  const spread = makeWorld({ rocks: [], drones: salvageSquad(50), wrecks: wrecks() });
+  const spreadRuntime = createRuntime({ config: makeConfig(), deps: spread.deps });
+  spreadRuntime.onSceneTick(spread.scene, 1000);
+  assert.equal(spread.calls.salvage.length, 50, "every idle drone gets a wreck");
+  const byWreck = new Map();
+  for (const call of spread.calls.salvage) {
+    byWreck.set(call.targetID, (byWreck.get(call.targetID) || 0) + 1);
+  }
+  assert.equal((byWreck.get(4001) || 0) + (byWreck.get(4002) || 0), 50);
+  assert.ok((byWreck.get(4001) || 0) > 0 && (byWreck.get(4002) || 0) > 0,
+    "spread mode spills onto the second wreck");
+
+  // focus: one wreck, fifty drones, none left home.
+  const focus = makeWorld({ rocks: [], drones: salvageSquad(50), wrecks: wrecks() });
+  const focusRuntime = createRuntime({
+    config: makeConfig({ salvageTargetMode: "focus" }),
+    deps: focus.deps,
+  });
+  focusRuntime.onSceneTick(focus.scene, 1000);
+  assert.equal(focus.calls.salvage.length, 50);
+  assert.deepEqual([...new Set(focus.calls.salvage.map((call) => call.targetID))], [4001]);
+});
+
+test("mining: a hull that launches fifty drones puts every one of them to work", () => {
+  const drones = [];
+  for (let index = 0; index < 50; index += 1) {
+    drones.push(makeDrone({ itemID: 2001 + index, typeID: ORE_DRONE_TYPE, controllerID: 1000 }));
+  }
+  const world = makeWorld({
+    drones,
+    rocks: [makeRock(3001, "ore", 1230, 9000), makeRock(3002, "ore", 1230, 20000)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 50, "every idle drone gets a rock");
+  const byRock = new Map();
+  for (const call of world.calls.mine) {
+    byRock.set(call.targetID, (byRock.get(call.targetID) || 0) + 1);
+  }
+  assert.equal((byRock.get(3001) || 0) + (byRock.get(3002) || 0), 50);
+});
+
+test("salvage: two hulls sharing a field do not count a wreck against each other", () => {
+  // Three drones on one hull and one on another, and two wrecks both pilots may
+  // take. The first hull's drones claim the near wreck; the second hull's drone
+  // must still fly to the nearest one rather than be pushed to the far wreck by
+  // claims that are not its own.
+  const world = makeWorld({
+    rocks: [],
+    drones: [
+      ...salvageSquad(3),
+      makeDrone({ itemID: 2101, typeID: SALVAGE_DRONE_TYPE, controllerID: 1001 }),
+    ],
+    wrecks: [makeWreck(4001, 10000, 7), makeWreck(4002, 20000, 7)],
+    secondShip: { itemID: 1001, characterID: 8 },
+    lootAccess: () => ({ success: true, entitled: true, requiresSuspectTimer: false }),
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.salvage.length, 4);
+  const firstHull = world.calls.salvage.slice(0, 3).map((call) => call.targetID);
+  assert.deepEqual(firstHull, [4001, 4002, 4001],
+    "the near wreck fills first, then the second drone spills onto the far one");
+  const secondHull = world.calls.salvage[3];
+  assert.deepEqual(secondHull.droneIDs, [2101]);
+  assert.equal(secondHull.targetID, 4001,
+    "the second hull's drone goes to the nearest wreck: one claim map per hull");
+});
+
+test("drones: a third-party hull's drones are flown by their effect, not their name", () => {
+  // "Swarm Harvester XLS" contains no word any rule of ours looks for: with the
+  // game's effect records saying what it does, it is still flown - and the same
+  // probe says which kind.
+  const salvage = makeWorld({
+    rocks: [],
+    drones: [makeDrone({ itemID: 2001, typeID: THIRD_PARTY_DRONE_TYPE, controllerID: 1000 })],
+    wrecks: [makeWreck(4001, 9000, 7)],
+    salvageByEffectTypeIDs: [THIRD_PARTY_DRONE_TYPE],
+  });
+  const salvageRuntime = createRuntime({ config: makeConfig(), deps: salvage.deps });
+  assert.equal(
+    salvageRuntime._testing.classifyDroneKind(
+      salvage.drones[0], salvage.deps.getItemTypeRegistry(), salvage.shipEntity),
+    "salvage",
+  );
+  salvageRuntime.onSceneTick(salvage.scene, 1000);
+  assert.deepEqual(salvage.calls.salvage.map((call) => call.targetID), [4001]);
+
+  const mining = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: THIRD_PARTY_DRONE_TYPE, controllerID: 1000 })],
+    rocks: [makeRock(3001, "ore", 1230, 9000)],
+    miningByEffectTypeIDs: [THIRD_PARTY_DRONE_TYPE],
+  });
+  const miningRuntime = createRuntime({ config: makeConfig(), deps: mining.deps });
+  assert.equal(
+    miningRuntime._testing.classifyDroneKind(
+      mining.drones[0], mining.deps.getItemTypeRegistry(), mining.shipEntity),
+    "ore",
+  );
+  miningRuntime.onSceneTick(mining.scene, 1000);
+  assert.deepEqual(mining.calls.mine.map((call) => call.targetID), [3001]);
+
+  // A drone whose name and effect both say nothing is still left alone: the mod
+  // flies ore, ice and salvage, and nothing else.
+  const combat = makeWorld({
+    drones: [makeDrone({ itemID: 2001, typeID: 99999, controllerID: 1000 })],
+    wrecks: [makeWreck(4001, 9000, 7)],
+  });
+  const combatRuntime = createRuntime({ config: makeConfig(), deps: combat.deps });
+  assert.equal(
+    combatRuntime._testing.classifyDroneKind(
+      combat.drones[0], combat.deps.getItemTypeRegistry(), combat.shipEntity),
+    null,
+  );
+  combatRuntime.onSceneTick(combat.scene, 1000);
+  assert.equal(combat.calls.salvage.length + combat.calls.mine.length, 0);
+});
+
+test("chat: the salvage menu is its own set of switches", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7)],
+  });
+  const config = makeConfig();
+  const runtime = createRuntime({ config, deps: world.deps });
+  const run = (line) => chatCommand.handleCommand(runtime, config, world.session, line);
+
+  assert.match(run("s help").message, /the commands that follow \/aud s/);
+  assert.match(run("s help").message, /\/aud s foreign off\|warn\|allow/);
+  assert.match(run("s status").message, /AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("s status").message, /foreign\s+: off/);
+  assert.match(run("s status").message, /cargo hold/);
+  assert.match(run("s list").message, /wrecks in range/);
+  assert.match(run("s list").message, /\(4001\) .*yours to take, no flag/);
+
+  assert.match(run("s off").message, /salvage OFF for you/);
+  assert.equal(runtime.getSalvageState(7).enabled, false);
+  assert.equal(runtime.getPlayerState(7).enabled, true,
+    "the mining switch is a different switch");
+  assert.match(run("s on").message, /salvage ON for you/);
+  assert.equal(runtime.getSalvageState(7).enabled, true);
+
+  assert.match(run("s focus").message, /salvage targeting mode: FOCUS/);
+  assert.equal(runtime.getSalvageState(7).targetMode, "focus");
+  assert.equal(runtime.getPlayerState(7).targetMode, "spread");
+
+  assert.match(run("s distance").message, /distance: nearest first/);
+  assert.match(run("s distance farthest").message, /distance: farthest first/);
+  assert.match(run("s distance sideways").message, /must be "nearest" or "farthest"/);
+
+  assert.match(run("s foreign").message, /foreign: off/);
+  assert.match(run("s foreign warn").message, /foreign: warn/);
+  assert.match(run("s foreign off").message, /foreign: off/);
+  assert.match(run("s foreign sideways").message, /must be "off", "warn" or "allow"/);
+  assert.match(run("s bogus").message, /unknown option "bogus"/);
+
+  // The shared commands answer from this menu too, and so does the whole-character
+  // reset - one kind at a time.
+  assert.match(run("s range 45000").message, /search radius set to 45\.0 km/);
+  assert.match(run("s threshold 5").message, /threshold: 5 m3/);
+  assert.match(run("s control recall").message, /takeover: RECALL/);
+  run("s foreign warn");
+  run("s reset");
+  const afterReset = runtime.getSalvageState(7);
+  assert.equal(afterReset.foreign, "off", "the salvage keys are back on the defaults");
+  assert.equal(afterReset.targetMode, "spread");
+  assert.equal(afterReset.rangeOverrideMeters, 45000,
+    "the radius is shared, so a kind reset leaves it alone");
+  assert.equal(afterReset.playerControlPolicy, "recall");
+});
+
+test("players: a 1.3.0 flat entry is read as the mining kind", () => {
+  const store = makePlayersFile("flat");
+  fs.mkdirSync(store.dir, { recursive: true });
+  fs.writeFileSync(store.file, JSON.stringify({
+    characters: {
+      "7": {
+        characterName: "Flat Entry",
+        enabled: false,
+        targetMode: "focus",
+        oreFilter: ["veldspar"],
+        filterFallback: "idle",
+        filterGrade: true,
+        minHoldFreeVolumeM3: 7,
+        playerControlPolicy: "off",
+        rangeOverrideMeters: 42000,
+      },
+    },
+  }, null, 2), "utf8");
+  const players = playerSettings.createPlayerStore({ file: store.file });
+  const world = makeWorld();
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps, players });
+
+  const mining = runtime.getPlayerState(7);
+  assert.equal(mining.source, "player");
+  assert.equal(mining.enabled, false);
+  assert.equal(mining.targetMode, "focus");
+  assert.deepEqual(mining.oreFilter, ["veldspar"]);
+  assert.equal(mining.filterFallback, "idle");
+  assert.equal(mining.filterGrade, true);
+  assert.equal(mining.minHoldFreeVolumeM3, 7);
+  assert.equal(mining.playerControlPolicy, "off");
+  assert.equal(mining.rangeOverrideMeters, 42000);
+
+  // The flat entry says nothing about salvage, so the salvage switches are on
+  // the server defaults - and the shared keys are shared.
+  const salvage = runtime.getSalvageState(7);
+  assert.equal(salvage.enabled, configModule.DEFAULTS.salvageEnabled);
+  assert.equal(salvage.targetMode, configModule.DEFAULTS.salvageTargetMode);
+  assert.equal(salvage.distance, "nearest");
+  assert.equal(salvage.foreign, "off");
+  assert.equal(salvage.minHoldFreeVolumeM3, 7, "the threshold is shared");
+  assert.equal(salvage.rangeOverrideMeters, 42000, "and so is the radius");
+
+  // Writing one salvage key must not rewrite the mining half into the salvage
+  // half, or drop either of them.
+  runtime.setPlayerSalvageForeign(7, "warn");
+  const written = JSON.parse(fs.readFileSync(store.file, "utf8")).characters["7"];
+  assert.equal(written.salvage.foreign, "warn");
+  assert.equal(written.mining.targetMode, "focus");
+  assert.deepEqual(written.mining.oreFilter, ["veldspar"]);
+  assert.equal(written.minHoldFreeVolumeM3, 7);
   fs.rmSync(store.dir, { recursive: true, force: true });
 });
 // The installer suite ships beside the mod in the development tree and in the

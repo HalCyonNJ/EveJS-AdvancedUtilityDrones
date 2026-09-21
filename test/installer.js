@@ -10,7 +10,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
-const MOD_ID = "AlternateMiningDrones";
+const MOD_ID = "AdvancedUtilityDrones";
 
 const ENTRYPOINT_FIXTURE = [
   "#!/usr/bin/env bash",
@@ -272,7 +272,7 @@ function register(harness) {
     // NODE_OPTIONS is a list and another loader mod may already own it, so the
     // block APPENDS and only assigns outright when the variable is unset.
     assert.deepStrictEqual(
-      lines.filter((line) => line.includes("AlternateMiningDrones")).map((line) => line.trim()),
+      lines.filter((line) => line.includes("AdvancedUtilityDrones")).map((line) => line.trim()),
       [
         registerLib.START_SERVER_BEGIN,
         `if exist "${nativeExist}" (`,
@@ -445,7 +445,7 @@ function register(harness) {
     assert.deepStrictEqual(unmarkedAudit.warnings, []);
     assert.match(
       auditLib.formatStartServerAudit(unmarkedAudit).join("\n"),
-      /autopilotJumpZero -> AlternateMiningDrones/u,
+      /autopilotJumpZero -> AdvancedUtilityDrones/u,
       "the chain line must read left to right, innermost first",
     );
 
@@ -467,7 +467,7 @@ function register(harness) {
     assert.deepStrictEqual(erased.droppedBlocks, ["otherMod", MOD_ID]);
     assert.ok(
       erased.warnings.some((warning) =>
-        /assigns NODE_OPTIONS outright, erasing otherMod, AlternateMiningDrones/u.test(warning),
+        /assigns NODE_OPTIONS outright, erasing otherMod, AdvancedUtilityDrones/u.test(warning),
       ),
       `expected an erasure warning, got ${JSON.stringify(erased.warnings)}`,
     );
@@ -506,7 +506,7 @@ function register(harness) {
     assert.deepStrictEqual(audit.notes, []);
     assert.match(
       auditLib.formatEntrypointAudit(audit).join("\n"),
-      /run_server : fourModeAsteroidBelts -> AlternateMiningDrones/u,
+      /run_server : fourModeAsteroidBelts -> AdvancedUtilityDrones/u,
     );
     // The database builder is a node invocation too, and it must not be read as
     // a launch: nothing preloads into it.
@@ -571,7 +571,7 @@ function register(harness) {
     // is worth a note, never a warning - the mod may not touch the same files.
     assert.deepStrictEqual(followed.warnings, [`${MOD_ID} is preloaded by 1 of 2 server launches`]);
     assert.ok(
-      followed.notes.some((note) => /someReplacer required after AlternateMiningDrones/u.test(note)),
+      followed.notes.some((note) => /someReplacer required after AdvancedUtilityDrones/u.test(note)),
       `expected a follower note, got ${JSON.stringify(followed.notes)}`,
     );
   });
@@ -582,7 +582,7 @@ function register(harness) {
   });
 
   test("installer: end to end install, reinstall, and uninstall", () => {
-    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "alternateminingdrones-"));
+    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "advancedutilitydrones-"));
     try {
       const root = buildFixtureRoot(workdir);
       const entrypoint = path.join(root, "docker", "entrypoint.sh");
@@ -618,7 +618,7 @@ function register(harness) {
         "server/package.json must stay untouched: it is a Docker dependency-layer input",
       );
       assert.match(installOutput, /docker \+ native/u, "both deployments must be detected");
-      assert.strictEqual(fs.readdirSync(path.join(root, "_alternateminingdrones-backup")).length, 1, "one backup per run");
+      assert.strictEqual(fs.readdirSync(path.join(root, "_advancedutilitydrones-backup")).length, 1, "one backup per run");
 
       const afterFirst = { entrypoint: read(entrypoint), startServer: read(startServer) };
       run("install.js", []);
@@ -666,8 +666,8 @@ function register(harness) {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-config-"));
     try {
       const root = buildFixtureRoot(workdir);
-      const serverConfig = path.join(root, "config", "alternateMiningDrones.json");
-      const playersConfig = path.join(root, "config", "alternateMiningDrones.players.json");
+      const serverConfig = path.join(root, "config", "advancedUtilityDrones.json");
+      const playersConfig = path.join(root, "config", "advancedUtilityDrones.players.json");
       const run = (script, args = []) => spawnSync(
         process.execPath,
         [path.join(installerDir, script), "--server", root, ...args],
@@ -697,7 +697,7 @@ function register(harness) {
       );
       assert.match(
         again.stdout,
-        /\[WARN\] config\/alternateMiningDrones\.json: the file does not end in a line/,
+        /\[WARN\] config\/advancedUtilityDrones\.json: the file does not end in a line/,
       );
 
       // A file written one key per line - what the installer seeds, and what an
@@ -719,7 +719,7 @@ function register(harness) {
       assert.strictEqual(migrated.status, 0, migrated.stderr);
       assert.match(
         migrated.stdout,
-        /\[ OK \] config\/alternateMiningDrones\.json: updated, v1\.2\.1 shape -> v1\.3\.0 \(added /,
+        /\[ OK \] config\/advancedUtilityDrones\.json: updated, v1\.2\.1 shape -> v1\.0\.0-alpha \(added /,
       );
       const config = JSON.parse(fs.readFileSync(serverConfig, "utf8"));
       assert.equal(config.targetMode, "focus", "the operator's own value is untouched");
@@ -728,9 +728,9 @@ function register(harness) {
         "the operator's own comment stays as it is");
       assert.equal(config.filterGrade, false, "a key this release added arrives with its default");
       assert.equal(config.allowPlayerCopy, true);
-      assert.equal(config.configVersion, "1.3.0");
+      assert.equal(config.configVersion, "1.0.0-alpha");
       assert.ok(
-        fs.readdirSync(path.join(root, "_alternateminingdrones-backup")).length >= 1,
+        fs.readdirSync(path.join(root, "_advancedutilitydrones-backup")).length >= 1,
         "the file is archived before it is updated",
       );
 
@@ -739,7 +739,7 @@ function register(harness) {
       assert.strictEqual(settled.status, 0, settled.stderr);
       assert.match(
         settled.stdout,
-        /\[SKIP\] config\/alternateMiningDrones\.json: already at the v1\.3\.0 key set/,
+        /\[SKIP\] config\/advancedUtilityDrones\.json: already at the v1\.0\.0-alpha key set/,
       );
 
       // --keep-config leaves both files behind.
@@ -752,13 +752,94 @@ function register(harness) {
       assert.ok(!fs.existsSync(serverConfig), "uninstall must retire the server config");
       assert.ok(!fs.existsSync(playersConfig), "uninstall must retire the players file");
       assert.ok(
-        fs.readdirSync(path.join(root, "_alternateminingdrones-backup")).length >= 1,
+        fs.readdirSync(path.join(root, "_advancedutilitydrones-backup")).length >= 1,
         "removed configuration must be archived first",
       );
     } finally {
       fs.rmSync(workdir, { recursive: true, force: true });
     }
   });
+  // The rename from Alternate Mining Drones left two files under names this
+  // release does not read. Without the carry-over an upgrade would seed fresh
+  // defaults and orphan every character's saved choices without a word.
+  test("installer: a configuration left under the old name is carried over", () => {
+    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "aud-carryover-"));
+    try {
+      const root = buildFixtureRoot(workdir);
+      const configDir = path.join(root, "config");
+      const serverConfig = path.join(configDir, "advancedUtilityDrones.json");
+      const playersConfig = path.join(configDir, "advancedUtilityDrones.players.json");
+      const legacyServer = path.join(configDir, "alternateMiningDrones.json");
+      const legacyPlayers = path.join(configDir, "alternateMiningDrones.players.json");
+      const run = (script, args = []) => spawnSync(
+        process.execPath,
+        [path.join(installerDir, script), "--server", root, ...args],
+        { encoding: "utf8", timeout: 60000 },
+      );
+
+      // What the operator already owns after running the old mod.
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(
+        legacyServer,
+        ["{", '  "targetMode": "focus",', '  "rangeMeters": 30000', "}", ""].join("\n"),
+        "utf8",
+      );
+      fs.writeFileSync(
+        legacyPlayers,
+        JSON.stringify({ characters: { 140000005: { enabled: false } } }, null, 2) + "\n",
+        "utf8",
+      );
+
+      // --dry-run names the rename and changes nothing at all.
+      const dry = run("install.js", ["--dry-run"]);
+      assert.strictEqual(dry.status, 0, dry.stderr);
+      assert.match(
+        dry.stdout,
+        /\[PLAN\] config\/alternateMiningDrones\.json: would be renamed to advancedUtilityDrones\.json/u,
+      );
+      assert.ok(fs.existsSync(legacyServer), "--dry-run must not rename anything");
+      assert.ok(!fs.existsSync(serverConfig), "--dry-run must not create the new file");
+
+      const first = run("install.js");
+      assert.strictEqual(first.status, 0, first.stderr);
+      assert.match(
+        first.stdout,
+        /\[ OK \] config\/advancedUtilityDrones\.json: carried over from alternateMiningDrones\.json/u,
+      );
+      assert.match(
+        first.stdout,
+        /\[ OK \] config\/advancedUtilityDrones\.players\.json: carried over from alternateMiningDrones\.players\.json/u,
+      );
+      assert.ok(!fs.existsSync(legacyServer), "the old name must not be left behind");
+      assert.ok(!fs.existsSync(legacyPlayers));
+      const config = JSON.parse(fs.readFileSync(serverConfig, "utf8"));
+      assert.equal(config.targetMode, "focus", "the operator's own value travels with the file");
+      assert.equal(config.rangeMeters, 30000);
+      assert.equal(config.configVersion, "1.0.0-alpha", "and it is then migrated like any other file");
+      const players = JSON.parse(fs.readFileSync(playersConfig, "utf8"));
+      assert.equal(
+        players.characters["140000005"].enabled,
+        false,
+        "a character's saved choice is not orphaned by the rename",
+      );
+
+      // A file already sitting under the new name is the operator's and wins:
+      // a stale file under the old name is never allowed to overwrite it.
+      fs.writeFileSync(legacyServer, '{\n  "targetMode": "spread"\n}\n', "utf8");
+      const second = run("install.js");
+      assert.strictEqual(second.status, 0, second.stderr);
+      assert.equal(
+        JSON.parse(fs.readFileSync(serverConfig, "utf8")).targetMode,
+        "focus",
+        "the new-named file is the one that is read",
+      );
+      assert.ok(fs.existsSync(legacyServer), "the stale file is left alone once the new one exists");
+    } finally {
+      fs.rmSync(workdir, { recursive: true, force: true });
+    }
+  });
+
+
   test("installer: update refreshes the mod in place and keeps everything the operator owns", () => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-update-"));
     try {
@@ -782,8 +863,8 @@ function register(harness) {
         "utf8",
       );
       const envPath = path.join(modDirPath, ".env");
-      fs.writeFileSync(envPath, "EVEJS_ALT_MINING_DRONES_TARGET_MODE=focus\n", "utf8");
-      const serverConfig = path.join(root, "config", "alternateMiningDrones.json");
+      fs.writeFileSync(envPath, "EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE=focus\n", "utf8");
+      const serverConfig = path.join(root, "config", "advancedUtilityDrones.json");
       fs.writeFileSync(serverConfig, JSON.stringify({ targetMode: "focus" }), "utf8");
 
       const update = run("update.js");
@@ -802,7 +883,7 @@ function register(harness) {
       );
       assert.strictEqual(
         fs.readFileSync(envPath, "utf8"),
-        "EVEJS_ALT_MINING_DRONES_TARGET_MODE=focus\n",
+        "EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE=focus\n",
         "a local .env is the operator's configuration and must survive an update",
       );
       assert.deepStrictEqual(
@@ -817,7 +898,7 @@ function register(harness) {
 
       // The folder that was replaced is archived first, so the old release can
       // always be recovered by hand.
-      const backupRoot = path.join(root, "_alternateminingdrones-backup");
+      const backupRoot = path.join(root, "_advancedutilitydrones-backup");
       const archivedOldVersion = fs.readdirSync(backupRoot).some((stamp) => {
         const archived = path.join(backupRoot, stamp, "mods", MOD_ID, "evejs-launcher.mod.json");
         if (!fs.existsSync(archived)) return false;
@@ -848,7 +929,7 @@ function register(harness) {
       // there is exactly one place that can go stale when a setting is added.
       const payloadSettings = require(settingsPath);
       const seeded = JSON.parse(
-        fs.readFileSync(path.join(root, "config", "alternateMiningDrones.players.json"), "utf8"),
+        fs.readFileSync(path.join(root, "config", "advancedUtilityDrones.players.json"), "utf8"),
       );
       assert.strictEqual(seeded._comment, payloadSettings.FILE_COMMENT);
       assert.strictEqual(seeded._help, payloadSettings.FILE_HELP);
@@ -927,7 +1008,7 @@ function register(harness) {
     // (installed) or the EveJS checkout beside it (development).
     const runtimeRoot = path.resolve(modDir, "../..");
     const candidates = [
-      process.env.EVEJS_ALT_MINING_DRONES_TREE,
+      process.env.EVEJS_ADVANCED_UTILITY_DRONES_TREE,
       runtimeRoot,
       path.join(runtimeRoot, "EveJS"),
     ].filter(Boolean);
@@ -990,17 +1071,17 @@ function register(harness) {
   });
 
   test("installer: an unfolded package finds the server with no arguments", () => {
-    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "alternateminingdrones-pkg-"));
+    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "advancedutilitydrones-pkg-"));
     try {
       // Nothing near the package is a server, which is the case that used to
       // end in "pass --server". The sweep stands in for the local drives.
       const root = writeEveJsRoot(path.join(workdir, "server-farm", "EveJS"));
-      const pkg = buildInstallerPackage(installerDir, modDir, path.join(workdir, "Downloads", "AlternateMiningDrones-0.0.0"));
+      const pkg = buildInstallerPackage(installerDir, modDir, path.join(workdir, "Downloads", "AdvancedUtilityDrones-0.0.0"));
       const result = spawnSync(process.execPath, [path.join(pkg, "install.js")], {
         cwd: pkg,
         encoding: "utf8",
         timeout: 60000,
-        env: { ...process.env, EVEJS_ALT_MINING_DRONES_SEARCH_BASES: path.join(workdir, "server-farm") },
+        env: { ...process.env, EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES: path.join(workdir, "server-farm") },
       });
       assert.strictEqual(result.status, 0, `install.js failed:\n${result.stdout}\n${result.stderr}`);
       assert.match(result.stdout, /EveJS root\s*:\s*\S/u, "the chosen root must be reported");
@@ -1027,17 +1108,17 @@ function register(harness) {
   });
 
   test("installer: a package unfolded inside mods\\ resolves its own tree", () => {
-    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "alternateminingdrones-inmods-"));
+    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "advancedutilitydrones-inmods-"));
     try {
       const root = writeEveJsRoot(path.join(workdir, "EveJS"));
-      const pkg = buildInstallerPackage(installerDir, modDir, path.join(root, "mods", "AlternateMiningDrones-0.0.0"));
+      const pkg = buildInstallerPackage(installerDir, modDir, path.join(root, "mods", "AdvancedUtilityDrones-0.0.0"));
       const result = spawnSync(process.execPath, [path.join(pkg, "install.js")], {
         cwd: pkg,
         encoding: "utf8",
         timeout: 60000,
         // Pointed at an empty sandbox on purpose: this path must be answered by
         // the ancestor walk, without the sweep ever running.
-        env: { ...process.env, EVEJS_ALT_MINING_DRONES_SEARCH_BASES: path.join(workdir, "nothing-here") },
+        env: { ...process.env, EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES: path.join(workdir, "nothing-here") },
       });
       assert.strictEqual(result.status, 0, `install.js failed:\n${result.stdout}\n${result.stderr}`);
       assert.ok(
@@ -1048,7 +1129,7 @@ function register(harness) {
         cwd: pkg,
         encoding: "utf8",
         timeout: 60000,
-        env: { ...process.env, EVEJS_ALT_MINING_DRONES_SEARCH_BASES: path.join(workdir, "nothing-here") },
+        env: { ...process.env, EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES: path.join(workdir, "nothing-here") },
       });
       assert.strictEqual(uninstall.status, 0, `uninstall.js failed:\n${uninstall.stdout}\n${uninstall.stderr}`);
       assert.strictEqual(
@@ -1079,7 +1160,7 @@ function register(harness) {
     const result = migration.migrate(old, { exampleText });
     assert.strictEqual(result.changed, true);
     assert.strictEqual(result.from, "1.2.1");
-    assert.strictEqual(result.version, "1.3.0");
+    assert.strictEqual(result.version, "1.0.0-alpha");
     assert.ok(result.added.includes("filterGrade"), "the grade switch is what 1.2.9 added");
     assert.ok(result.added.includes("allowPlayerCopy"));
     assert.ok(result.added.includes("chatTrigger"));
@@ -1088,7 +1169,7 @@ function register(harness) {
     assert.strictEqual(migrated.targetMode, "focus", "no value in the file is rewritten");
     assert.strictEqual(migrated.rangeMeters, 30000);
     assert.strictEqual(migrated._comment, "hand written", "the operator's own comment stays");
-    assert.strictEqual(migrated.configVersion, "1.3.0");
+    assert.strictEqual(migrated.configVersion, "1.0.0-alpha");
     assert.strictEqual(migrated.filterGrade, false, "a missing key arrives with its packaged default");
     assert.strictEqual(migrated.playersFile, "");
     assert.strictEqual(result.text.endsWith("\n"), true, "a trailing newline stays");
@@ -1108,7 +1189,7 @@ function register(harness) {
     // Running it a second time is a no-op: the keys are there and the stamp says so.
     const second = migration.migrate(result.text, { exampleText });
     assert.strictEqual(second.changed, false);
-    assert.strictEqual(second.version, "1.3.0");
+    assert.strictEqual(second.version, "1.0.0-alpha");
 
     // The line endings are the file's own choice and are kept.
     assert.strictEqual(

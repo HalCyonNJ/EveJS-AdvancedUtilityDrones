@@ -1,4 +1,4 @@
-# Alternate Mining Drones v1.3.0 - Installer
+# Advanced Utility Drones v1.0.0-alpha - Installer
 
 Gives mining drones the auto-targeting every other drone in the game has: a launched drone finds the
 closest ore or ice inside the ship's drone control range and starts mining, and the squadron recalls
@@ -45,16 +45,16 @@ install.bat --server "C:\path\to\EveJS"
 
 `--server` skips the search entirely, as do `EVEJS_SERVER` and `EVEJS_ROOT` in the environment. Use one
 of them when the machine holds more than one checkout, or when the sweep finds the wrong one first. To
-point the sweep at specific places instead, set `EVEJS_ALT_MINING_DRONES_SEARCH_BASES` to a ";"-separated
+point the sweep at specific places instead, set `EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES` to a ";"-separated
 list of directories; it replaces the drive list rather than adding to it.
 
-The installer always copies the mod to `<EveJS root>\mods\AlternateMiningDrones`, and then registers
+The installer always copies the mod to `<EveJS root>\mods\AdvancedUtilityDrones`, and then registers
 the preload in every deployment it finds:
 
 | Deployment | Registered in | Entry added |
 |---|---|---|
-| Docker | `docker/entrypoint.sh` | `--require /app/mods/AlternateMiningDrones/loader.js` |
-| Native | `StartServer.bat` | `NODE_OPTIONS=--require "...\mods\AlternateMiningDrones\loader.js"` |
+| Docker | `docker/entrypoint.sh` | `--require /app/mods/AdvancedUtilityDrones/loader.js` |
+| Native | `StartServer.bat` | `NODE_OPTIONS=--require "...\mods\AdvancedUtilityDrones\loader.js"` |
 
 The entry is appended **after** every `--require` already in the list, in both `run_server()` and
 `run_all()`. That is deliberate: require order is `Module._load` hook order, and only the outermost
@@ -70,7 +70,7 @@ older installer mis-ordered gets repaired.
 
 Both registrations are idempotent, so running the installer twice changes nothing the second time.
 Every file it is about to rewrite is copied to
-`<EveJS root>\_alternateminingdrones-backup\<timestamp>\` first.
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\` first.
 
 Options:
 
@@ -82,7 +82,7 @@ Options:
 | `--force` | Reinstall even when the mod folder already looks current. |
 | `--update` | Same run, labelled as an update: it reports the version it replaces. `update.bat` does this for you. |
 
-An existing `mods\AlternateMiningDrones\.env` is never overwritten on reinstall, so local edits
+An existing `mods\AdvancedUtilityDrones\.env` is never overwritten on reinstall, so local edits
 survive an upgrade. Delete it first if the shipped defaults are wanted back.
 
 ## After installing
@@ -95,9 +95,9 @@ Native : restart the server with StartServer.bat
 Then look for these lines in the server log:
 
 ```text
-[alternateMiningDrones] v1.3.0 loader ready ...
-[alternateMiningDrones] drone tick hook installed ...
-[alternateMiningDrones] plain-chat trigger installed ...
+[advancedUtilityDrones] v1.0.0-alpha loader ready ...
+[advancedUtilityDrones] drone tick hook installed ...
+[advancedUtilityDrones] plain-chat trigger installed ...
 ```
 
 ## Configure
@@ -105,12 +105,12 @@ Then look for these lines in the server log:
 Nothing has to be configured. The default follows the drone control range of whatever ship launched
 the drones, which is what most people want.
 
-To change something, edit `<EveJS root>/config/alternateMiningDrones.json` - copy the mod's
+To change something, edit `<EveJS root>/config/advancedUtilityDrones.json` - copy the mod's
 `config.example.json` as a starting point. Under Docker that directory is already bind-mounted, so a
 change costs a container restart and never an image rebuild. An environment variable on the `server`
-service wins over the file, and a native install can use `mods\AlternateMiningDrones\.env` instead.
+service wins over the file, and a native install can use `mods\AdvancedUtilityDrones\.env` instead.
 
-Precedence: environment variable > `config/alternateMiningDrones.json` > mod `.env` > built-in default.
+Precedence: environment variable > `config/advancedUtilityDrones.json` > mod `.env` > built-in default.
 
 An invalid value is reported in the log and the mod installs nothing, leaving mining drones manual.
 
@@ -129,11 +129,11 @@ two entry points will actually produce:
 ```text
 Docker     : registered (D:\eve\docker\entrypoint.sh)
   Docker launch chain (--require order; the last entry owns the outermost hook)
-    run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AlternateMiningDrones
-    run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AlternateMiningDrones
+    run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
+    run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
 Native     : registered (D:\eve\StartServer.bat)
-  Native loader chain : autopilotJumpZero -> AlternateMiningDrones
-                        (AlternateMiningDrones is required last, so it owns the outermost hook)
+  Native loader chain : autopilotJumpZero -> AdvancedUtilityDrones
+                        (AdvancedUtilityDrones is required last, so it owns the outermost hook)
                         no loader block is dropped
 ```
 
@@ -154,7 +154,7 @@ an older release, and the copy inside a Docker image all read as one, because `.
   inert. Nothing in EveJS reports that, so the status command does - as a note, since a checkout ships
   both entry points while you normally run only one.
 
-Re-run this after installing anything else that preloads a loader. In game, `/atm status` is
+Re-run this after installing anything else that preloads a loader. In game, `/aud m status` is
 the per-character view, including the resolved control range and its breakdown.
 
 ## Update
@@ -165,18 +165,18 @@ update.bat
 
 Run this instead of uninstalling and reinstalling when a newer package arrives. A reinstall already
 does the right thing - the folder being replaced is archived under
-`<EveJS root>\_alternateminingdrones-backup\<timestamp>\`, the shipped payload is copied over it,
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\`, the shipped payload is copied over it,
 the same idempotent preload is applied again, and everything the operator owns is skipped because it
 already exists:
 
 | Kept untouched | Why |
 |---|---|
-| `config/alternateMiningDrones.json` | Seeded only when it is missing; on a later run the keys this release added are inserted, and not one value that is there is edited. |
-| `config/alternateMiningDrones.players.json` | Every character's saved choices. |
-| `mods\AlternateMiningDrones\.env` | `copyPayload` skips an existing `.env`. |
+| `config/advancedUtilityDrones.json` | Seeded only when it is missing; on a later run the keys this release added are inserted, and not one value that is there is edited. |
+| `config/advancedUtilityDrones.players.json` | Every character's saved choices. |
+| `mods\AdvancedUtilityDrones\.env` | `copyPayload` skips an existing `.env`. |
 
 `update.bat` is the same program as `install.bat` with a different label, so it prints the version
-it replaced and the version it installed - and it brings `config/alternateMiningDrones.json` up to the
+it replaced and the version it installed - and it brings `config/advancedUtilityDrones.json` up to the
 key set of the release it installs, adding the keys that are missing and stamping the file with
 `"configVersion"`, while every value already in it is left exactly as it is (`--dry-run` prints what
 would be added). It takes the same `--server`, `--dry-run`,
@@ -197,7 +197,7 @@ uninstall.bat --server "C:\path\to\EveJS" --dry-run
 ```
 
 Removes the preload from both deployments and archives the mod folder under
-`<EveJS root>\_alternateminingdrones-backup\<timestamp>\`. The removals are surgical rather than
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\`. The removals are surgical rather than
 restored from a whole-file backup, so uninstalling this mod never undoes another mod that registered
 itself afterwards.
 
@@ -210,6 +210,6 @@ Mining drones then behave exactly like vanilla: launch them and they sit idle un
 onto a rock.
 
 `--keep-files` leaves the mod folder in place, `--keep-config` leaves
-`config/alternateMiningDrones.json` and the players file behind, and `--dry-run` reports without
+`config/advancedUtilityDrones.json` and the players file behind, and `--dry-run` reports without
 writing. Without `--keep-config` both configuration files are archived under the backup root and
 then removed.

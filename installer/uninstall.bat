@@ -6,7 +6,7 @@ where node >nul 2>nul
 if errorlevel 1 goto nonode
 
 echo ============================================================
-echo   Alternate Mining Drones - Uninstall / Rollback
+echo   Advanced Utility Drones - Uninstall / Rollback
 echo ============================================================
 echo.
 echo   Usage:
@@ -19,7 +19,7 @@ echo   With no arguments EveJS is located the same way the installer
 echo   locates it: beside this folder, above it, then the local drives.
 echo.
 echo   Removes the preload from every deployment and archives the mod
-echo   folder under ^<EveJS root^>\_alternateminingdrones-backup\.
+echo   folder under ^<EveJS root^>\_advancedutilitydrones-backup\.
 echo.
 echo ------------------------------------------------------------
 echo.

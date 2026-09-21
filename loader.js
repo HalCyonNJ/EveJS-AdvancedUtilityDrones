@@ -12,15 +12,15 @@ const commandScope = require("./lib/commandScope");
 const { createPlayerStore } = require("./lib/playerSettings");
 const { createRuntime, createServerDeps } = require("./lib/runtime");
 
-const MOD_VERSION = "1.3.0";
+const MOD_VERSION = "1.0.0-alpha";
 const MOD_DIR = __dirname;
 const RUNTIME_ROOT = path.resolve(MOD_DIR, "../..");
-const LOG_PREFIX = "[alternateMiningDrones]";
-const INSTALL_FLAG = "__alternateMiningDronesLoaderInstalled";
-const API_SYMBOL = "evejs.alternateMiningDrones";
-const TICK_MARKER = Symbol.for("evejs.alternateMiningDrones.tickScene");
-const COMMAND_MARKER = Symbol.for("evejs.alternateMiningDrones.command");
-const LAUNCH_MARKER = Symbol.for("evejs.alternateMiningDrones.launch");
+const LOG_PREFIX = "[advancedUtilityDrones]";
+const INSTALL_FLAG = "__advancedUtilityDronesLoaderInstalled";
+const API_SYMBOL = "evejs.advancedUtilityDrones";
+const TICK_MARKER = Symbol.for("evejs.advancedUtilityDrones.tickScene");
+const COMMAND_MARKER = Symbol.for("evejs.advancedUtilityDrones.command");
+const LAUNCH_MARKER = Symbol.for("evejs.advancedUtilityDrones.launch");
 
 // Three vendor files are touched, and none of them is rewritten on disk: the
 // drone runtime is wrapped through its exported tickScene, chatCommands through
@@ -168,7 +168,7 @@ function install(options = {}) {
       return exported;
     }
     const original = exported.tickScene;
-    const wrapped = function alternateMiningDronesTickScene(scene, now) {
+    const wrapped = function advancedUtilityDronesTickScene(scene, now) {
       const result = original.call(this, scene, now);
       try {
         runtime.onSceneTick(scene, now);
@@ -183,8 +183,9 @@ function install(options = {}) {
     wrapDroneLaunch(exported);
     applied.add("droneRuntime");
     log(
-      `drone tick hook installed — idle mining drones are re-tasked every ` +
-      `${config.scanIntervalMs} ms (${config.targetMode} mode)`,
+      `drone tick hook installed — idle drones are re-tasked every ` +
+      `${config.scanIntervalMs} ms (mining ${config.targetMode}, ` +
+      `salvage ${config.salvageTargetMode})`,
     );
     return exported;
   }
@@ -202,7 +203,7 @@ function install(options = {}) {
       if (!descriptor || descriptor.writable !== true) {
         continue;
       }
-      const wrapped = function alternateMiningDronesPlayerCommand(session, first) {
+      const wrapped = function advancedUtilityDronesPlayerCommand(session, first) {
         if (!commandScope.isInternal()) {
           try {
             runtime.notePlayerCommand(name, session, first);
@@ -228,7 +229,7 @@ function install(options = {}) {
     if (!descriptor || descriptor.writable !== true) {
       return;
     }
-    const wrapped = function alternateMiningDronesLaunchDrones(session, ...rest) {
+    const wrapped = function advancedUtilityDronesLaunchDrones(session, ...rest) {
       const result = original.apply(this, [session, ...rest]);
       try {
         runtime.resumeDrones(session);
@@ -344,8 +345,9 @@ function install(options = {}) {
     `per-character choices live in ${config.playersFilename} ` +
     `(loaded: ${players.stats().characters} character(s)); ` +
     (config.chatTrigger
-      ? "both /atm (alias /altmining) and the plain-chat !atm trigger work for every character"
-      : "the plain-chat !atm trigger is switched off by configuration"),
+      ? "the /aud command and the plain-chat !aud trigger work for every character " +
+        "(/aud m for the mining drones, /aud s for the salvage drones)"
+      : "the plain-chat !aud trigger is switched off by configuration"),
   );
   return installState;
 }

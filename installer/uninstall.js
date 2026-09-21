@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Alternate Mining Drones - uninstall / rollback.
+ * Advanced Utility Drones - uninstall / rollback.
  *
  * Removes the two preload registrations (Docker entrypoint and the native
  * StartServer.bat launcher) and retires the mod folder. The removals are surgical rather than
@@ -28,8 +28,8 @@ const INSTALLER_DIR = __dirname;
 // Exactly the two files the installer created for this mod.
 const CONFIG_DIRNAME = "config";
 const CONFIG_FILES = Object.freeze([
-  "alternateMiningDrones.json",
-  "alternateMiningDrones.players.json",
+  "advancedUtilityDrones.json",
+  "advancedUtilityDrones.players.json",
 ]);
 
 function out(line = "") {
@@ -174,7 +174,7 @@ function main() {
   const useNative = deployments.native.present && !options.dockerOnly;
 
   out("============================================================");
-  out("  Alternate Mining Drones - Uninstall / Rollback");
+  out("  Advanced Utility Drones - Uninstall / Rollback");
   out("============================================================");
   out(`  EveJS root : ${root}`);
   if (options.dryRun) out("  DRY RUN    : nothing will be written");
@@ -281,7 +281,7 @@ if (require.main === module) {
     main();
   } catch (error) {
     if (!process.exitCode) process.exitCode = 1;
-    if (process.env.EVEJS_ALT_MINING_DRONES_DEBUG) out(error.stack);
+    if (process.env.EVEJS_ADVANCED_UTILITY_DRONES_DEBUG) out(error.stack);
   }
 }
 

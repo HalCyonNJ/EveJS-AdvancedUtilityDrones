@@ -1,9 +1,9 @@
 "use strict";
 
 /**
- * Alternate Mining Drones - configuration migration.
+ * Advanced Utility Drones - configuration migration.
  *
- * config/alternateMiningDrones.json is seeded once and then owned by the
+ * config/advancedUtilityDrones.json is seeded once and then owned by the
  * operator: the installer never overwrites it, which is also why a setting a
  * later release added is simply absent from a file written by an earlier one.
  * The mod copes - an absent key falls back to the built-in default - but the
@@ -27,7 +27,7 @@
  */
 
 // The release this module brings a file up to. Bump it with the mod version.
-const CURRENT_VERSION = "1.3.0";
+const CURRENT_VERSION = "1.0.0-alpha";
 
 // Which release added which setting, oldest first. Append only: a key that was
 // already in the 1.2.1 file is never listed, and a release that only changed
@@ -37,6 +37,17 @@ const RELEASES = Object.freeze([
   Object.freeze({ version: "1.2.8", added: Object.freeze(["chatTrigger"]) }),
   Object.freeze({ version: "1.2.9", added: Object.freeze(["filterGrade"]) }),
   Object.freeze({ version: "1.3.0", added: Object.freeze([]) }),
+  // The rename to Advanced Utility Drones, and the first release that flies
+  // salvage drones: four keys, all of them about the salvage squadron.
+  Object.freeze({
+    version: "1.0.0-alpha",
+    added: Object.freeze([
+      "salvageEnabled",
+      "salvageTargetMode",
+      "salvageDistance",
+      "salvageForeign",
+    ]),
+  }),
 ]);
 
 // The release the shape of a file falls back to when even the first entry above

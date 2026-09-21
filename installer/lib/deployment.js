@@ -9,16 +9,16 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const MOD_ID = "AlternateMiningDrones";
+const MOD_ID = "AdvancedUtilityDrones";
 const PAYLOAD_DIRNAME = "mod";
-const BACKUP_DIRNAME = "_alternateminingdrones-backup";
+const BACKUP_DIRNAME = "_advancedutilitydrones-backup";
 const REQUIRED_FILES = Object.freeze([
   path.join("server", "index.js"),
   path.join("server", "src", "services", "drone", "droneRuntime.js"),
 ]);
 // Everything under the mod root that belongs to the development checkout only.
 // The installer prunes these from an already-installed folder, so an installed
-// mods\AlternateMiningDrones holds the payload and nothing else.
+// mods\AdvancedUtilityDrones holds the payload and nothing else.
 const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "node_modules", ".git"]);
 // Development files at the mod root. The packaging step is gone (the GitHub
 // repository is the distribution), so nothing needs listing here today.
@@ -151,7 +151,7 @@ const SCAN_BUDGET = 4000;
 // The bases the sweep starts from. Windows is asked which drives actually
 // exist, so an empty optical or card-reader letter is never touched; the
 // known locations are added on top for the platforms where fsutil is absent.
-// EVEJS_ALT_MINING_DRONES_SEARCH_BASES (a ";"-separated list) replaces the
+// EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES (a ";"-separated list) replaces the
 // whole list, which is how the test suite points the sweep at a sandbox.
 function localDriveRoots() {
   const roots = [];
@@ -169,7 +169,7 @@ function localDriveRoots() {
   // The override names the directories to sweep *as given*: it is a testing and
   // troubleshooting knob, so collapsing a path to its drive root would silently
   // ignore everything the caller asked for.
-  const override = (process.env.EVEJS_ALT_MINING_DRONES_SEARCH_BASES || "").trim();
+  const override = (process.env.EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES || "").trim();
   if (override) {
     for (const part of override.split(";")) {
       const trimmed = part.trim();
@@ -273,7 +273,7 @@ function timestamp(date = new Date()) {
   );
 }
 
-// Archives a file or directory under <EveJS root>/_alternateminingdrones-backup/ so
+// Archives a file or directory under <EveJS root>/_advancedutilitydrones-backup/ so
 // uninstall.bat can always restore something by hand, even after a later mod
 // rewrites the same lines again.
 function archivePath(root, sourcePath, backupRoot) {

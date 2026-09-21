@@ -6,7 +6,7 @@ where node >nul 2>nul
 if errorlevel 1 goto nonode
 
 echo ============================================================
-echo   Alternate Mining Drones - Status
+echo   Advanced Utility Drones - Status
 echo ============================================================
 echo.
 

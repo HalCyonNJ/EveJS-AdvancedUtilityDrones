@@ -6,7 +6,7 @@ where node >nul 2>nul
 if errorlevel 1 goto nonode
 
 echo ============================================================
-echo   Alternate Mining Drones - Installer
+echo   Advanced Utility Drones - Installer
 echo ============================================================
 echo.
 echo   Usage:
@@ -25,7 +25,7 @@ echo     Docker  docker/entrypoint.sh
 echo     Native  StartServer.bat  (NODE_OPTIONS, read by both npm start paths)
 echo.
 echo   Files that are about to change are backed up under
-echo   ^<EveJS root^>\_alternateminingdrones-backup\ by default.
+echo   ^<EveJS root^>\_advancedutilitydrones-backup\ by default.
 echo.
 echo ------------------------------------------------------------
 echo.

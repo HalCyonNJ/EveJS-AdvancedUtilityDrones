@@ -1,12 +1,12 @@
 "use strict";
 
 /**
- * Alternate Mining Drones - updater.
+ * Advanced Utility Drones - updater.
  *
  * A reinstall is already an upgrade: install.js archives the mod folder it is
  * about to replace, copies the new payload over it, re-applies the same
  * idempotent preload registration and leaves everything the operator owns
- * alone - config/alternateMiningDrones.json, the players file and a local
+ * alone - config/advancedUtilityDrones.json, the players file and a local
  * .env are only ever created when they are missing. This entry point exists so
  * that the run reports the version it moved from and to, instead of asking the
  * operator to uninstall first.
@@ -24,6 +24,6 @@ if (require.main === module) {
     main("update");
   } catch (error) {
     if (!process.exitCode) process.exitCode = 1;
-    if (process.env.EVEJS_ALT_MINING_DRONES_DEBUG) process.stdout.write(`${error.stack}\n`);
+    if (process.env.EVEJS_ADVANCED_UTILITY_DRONES_DEBUG) process.stdout.write(`${error.stack}\n`);
   }
 }

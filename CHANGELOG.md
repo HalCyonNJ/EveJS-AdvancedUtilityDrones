@@ -1,14 +1,92 @@
 # Changelog
 
-Alternate Mining Drones for EveJS 0.12.8. Newest release first.
+Advanced Utility Drones for EveJS 0.12.8. Newest release first.
 
 Every release is a drop-in replacement for the one before it: run `update.bat` over an existing
-install, or copy the `AlternateMiningDrones/` folder over the one in `mods/`. Nothing outside that
+install, or copy the `AdvancedUtilityDrones/` folder over the one in `mods/`. Nothing outside that
 folder is edited, no player installs anything, and every value you have set stays exactly as it is: the installer
 only adds the keys a later release introduced, and stamps the file with the release it was brought up
 to. A server keeps its settings and every player keeps their saved choices.
 
 ---
+
+## 1.0.0-alpha - 2026-09-21
+
+**The mod is `AdvancedUtilityDrones` now, and it flies salvage drones as well as mining drones.**
+The command is `/aud`, the kind of drone comes first, and the version line restarts at 1.0.0-alpha
+because the rename makes this a different mod from the `/atm` 1.3.0 line - not a step along it.
+
+### Added
+
+- **Salvage-drone automation.** An idle salvage drone launched from a player ship now picks its own
+  wreck inside the ship's drone control range, works it, and moves to the next one when it is empty -
+  the same gap the mining half fills, for the same reason: `droneRuntime.commandSalvage` can pick a
+  wreck for a drone, but only ever an *owned* one and only from a player's own order.
+- **`/aud s foreign off|warn|allow`** - whose wrecks may be worked. `off` (the default) keeps the
+  squadron on the wrecks the game says are yours: your own, a corporation or fleet member's, an
+  abandoned wreck, an NPC wreck. `warn` works another pilot's wreck and prints a warning line naming
+  the wreck and its owner **once per wreck per launch**; `allow` does the same in silence.
+- **The safety light is respected, and it has the last word.** Every wreck is put to the game's own
+  loot-entitlement check (`spaceLootEntitlement.evaluateSpaceLootAccess`) before any order is issued.
+  A wreck that check refuses - a green light over somebody else's wreck in empire space, which is
+  high sec *and* low sec - is skipped and warned about once per launch, whatever `foreign` says.
+- **`/aud s distance nearest|farthest`** - which end of the field the squadron starts at. `nearest`
+  is the default; `farthest` is for a long run through a field, so the drones do not crawl back over
+  ground they have already covered. **`/aud s spread|focus`** behaves as it does for miners.
+- **`/aud s list`** - the wrecks around the ship, in the order the drones will work them, each with
+  its owner and whether this pilot may touch it.
+- **`/aud s status`** - drones out, wrecks in range split into yours, another pilot's and refused by
+  your light, assignments and recalls with the last reason, warnings printed, and the hold the
+  material goes into.
+- **Drones are classified by their effects, not by their names.** A type that resolves a salvage or a
+  mining snapshot is flown; the name is only the fallback, and only it splits ore from ice. A
+  third-party hull that launches fifty drones under its own type names puts every one of them to work
+  - the mining half included.
+- **The claims map is per controller.** Two hulls sharing a field, or one pilot flying two of them, no
+  longer count a wreck against each other. On a fifty-drone hull that is the difference between a
+  whole squadron working and a handful working.
+- **Coverage for the salvage half**: own wreck only and nearest first, `farthest`, foreign warn and
+  allow, the safety-light skip and its warning, per-controller claims, the fifty-drone case for both
+  kinds, effect-based classification, and the salvage menu's own switches.
+
+### Renamed
+
+- **`AlternateMiningDrones` is `AdvancedUtilityDrones`, and `/atm` is `/aud`.** `/altmining` went
+  with it. The retired spellings - `/atm`, `/altmining`, `!atm`, `!altmining` - answer with one line
+  naming the new commands instead of being ignored.
+- **The kind of drone comes first.** `/aud m ...` is the mining menu, `/aud s ...` is the salvage
+  menu, and a bare `/aud` prints both. A bare `/aud off` is refused with a pointer to the two
+  spellings, because "off" on its own would be ambiguous: the two squadrons are separate switches.
+- `copy` and `reset` take no kind word: `/aud copy <name|id>` moves **both kinds** onto a character,
+  and `/aud reset` clears both. The new `/aud m reset` and `/aud s reset` clear one kind each.
+- The per-character file is `config/advancedUtilityDrones.players.json`, and an entry keeps the two
+  kinds side by side under `mining` and `salvage`. An entry written by 1.3.0 - flat `enabled`,
+  `targetMode`, `oreFilter` - is still read and means the mining kind, so nothing needs editing by hand.
+- The server-wide keys for the new half are `salvageEnabled`, `salvageTargetMode`, `salvageDistance`
+  and `salvageForeign`, with `EVEJS_ADVANCED_UTILITY_DRONES_SALVAGE_*` as environment variables. All
+  four are in `config.example.json` and `.env.example`.
+- Menus, help texts, replies and log lines all print the new name and the new commands.
+
+### Notes for operators
+
+- **Upgrading needs nothing done by hand.** The installer carries `config/alternateMiningDrones.json`
+  and `config/alternateMiningDrones.players.json` over to the new names - a file already sitting under
+  the new name is the operator's and is never overwritten - and the migration then adds the four
+  salvage keys to the server-wide file with a new `configVersion` stamp, changing no value that is
+  already there.
+- **The old environment spellings are still read.** `EVEJS_ALT_MINING_DRONES_*` works, and a value set
+  under the new spelling wins when both are present, so an existing `compose.yaml` or `.env` keeps
+  working while it is being renamed.
+- **Drone salvage is delivered into the cargo hold on this server.** The SDE gives a Noctis a
+  dedicated salvage hold, but the drone path grants into `ITEM_FLAGS.CARGO_HOLD` and its own space
+  check reads cargo, so the hold rule and `/aud s threshold` are about cargo space. The mod follows
+  the server rather than the SDE.
+- **There is no salvage filter in this release.** Every wreck in range is worked, in the order the
+  distance setting asks for: nothing in a wreck can say what it is worth the way a rock's type does.
+- The test suite is 107 cases; `node test\run.js` (or `RunTests.bat`) runs them all.
+
+---
+
 
 ## 1.3.0 - 2026-09-19
 
@@ -30,11 +108,11 @@ configuration file is brought up to this release's key set by the installer.**
 
 ### Added
 
-- **The installer brings an older `config/alternateMiningDrones.json` up to this release's key set.**
+- **The installer brings an older `config/advancedUtilityDrones.json` up to this release's key set.**
   A file written by 1.2.1 is missing `filterGrade`, `allowPlayerCopy`, `chatTrigger`,
   `filterFallback` and `retargetOnFilterChange`; every install and update now adds the keys that are
   missing, stamps `"configVersion": "1.3.0"`, and never rewrites a value that is already in the file.
-  The file is archived under `_alternateminingdrones-backup/` first, `--dry-run` prints what would be
+  The file is archived under `_advancedutilitydrones-backup/` first, `--dry-run` prints what would be
   added, and `--status` reports the shape it found. New module: `installer/lib/configMigration.js`.
 - **`f` is the short spelling of `filter`.** `/atm f add veldspar` is `/atm filter add veldspar`,
   `/atm f` prints the queue, `/atm f help` prints the list, and `!atm f ...` works from ordinary chat
@@ -113,40 +191,40 @@ drones to the best grade of a rock in range before the plainer ones.
   off the type name, `Compressed` and `Ancient Compressed` prefixes included.
 - **The queue read-back says so too** - `/atm filter` prints a `grade` line, `status` prints
   `grade on` inside its `filter` line, and a copied setup carries the preference with it.
-- **Server-wide default** `filterGrade` (`EVEJS_ALT_MINING_DRONES_FILTER_GRADE`, default `false`),
+- **Server-wide default** `filterGrade` (`EVEJS_ADVANCED_UTILITY_DRONES_FILTER_GRADE`, default `false`),
   documented in `.env.example` and `config.example.json`.
 
 ```text
 > /atm filter add veldspar, dark ochre, 16268, ice
-AlternateMiningDrones added veldspar, dark ochre, Gelidus. Drones already mining switch to the new queue within a second.
+AdvancedUtilityDrones added veldspar, dark ochre, Gelidus. Drones already mining switch to the new queue within a second.
   ore    : 1. veldspar, 2. dark ochre
   ice    : 1. Gelidus
   moon   : nothing
   warning: "ice" names a whole kind of rock, so it is not an entry - /atm filter clear ice empties the ice list
 
 > /atm filter move 16268 1 dark ochre 2
-AlternateMiningDrones moved Gelidus. Drones already mining switch to the new queue within a second.
+AdvancedUtilityDrones moved Gelidus. Drones already mining switch to the new queue within a second.
   ore    : 1. dark ochre
   ice    : 1. Gelidus
   moon   : nothing
   warning: dark ochre is not ice rock, and the first name picked the ice list - so it was left alone
 
 > /atm filter grade on
-AlternateMiningDrones filter grade: on (the richest grade of a rock in range is mined before the plainer ones).
+AdvancedUtilityDrones filter grade: on (the richest grade of a rock in range is mined before the plainer ones).
 ```
 
 ---
 
 ## 1.2.8 - 2026-09-19
 
-**Changed: the command has exactly four spellings.** `/alternateminingdrones` was long enough that
+**Changed: the command has exactly four spellings.** `/advancedutilitydrones` was long enough that
 nobody typed it, and `!amd` is an abbreviation another mod on a shared server may want for itself.
 Both were removed. `/atm` and `/altmining` are the slash forms, `!atm` and `!altmining` the
 plain-chat ones, and a line that spells anything else is left alone.
 
 ### Changed
 
-- **`/alternateminingdrones` is gone.** It was a registered alias of `/atm`; the client or the
+- **`/advancedutilitydrones` is gone.** It was a registered alias of `/atm`; the client or the
   server answers it the way it answers any unknown command.
 - **`!amd` is gone.** The plain-chat hook hands the line back instead of consuming it, so another mod
   is free to claim the abbreviation. Nothing else about the trigger changed: `chatTrigger`, the
@@ -185,11 +263,11 @@ the spaces with any run of words that names a rock put back together first.
 
 ```text
 > /atm filter add Gneiss Dark Ochre
-AlternateMiningDrones added gneiss, dark ochre.
+AdvancedUtilityDrones added gneiss, dark ochre.
   ore   : 1. gneiss, 2. dark ochre
 
 > /atm filter add dark, ochre
-AlternateMiningDrones added dark, ochre.
+AdvancedUtilityDrones added dark, ochre.
   ore   : 1. gneiss, 2. dark ochre, 3. dark, 4. ochre
 ```
 
@@ -214,11 +292,11 @@ the same way a copy is.
 
   ```text
   > /atm copy
-  AlternateMiningDrones copy - take another character's whole setup onto yours:
+  AdvancedUtilityDrones copy - take another character's whole setup onto yours:
     /atm copy exampel         - part of a name is enough, and a typo is tolerated
     /atm copy User:140000005 - or the character ID under the name in the client
   > /atm copy list exampel
-  AlternateMiningDrones copy list "exampel" - 2 of 3 character(s) match:
+  AdvancedUtilityDrones copy list "exampel" - 2 of 3 character(s) match:
     140000005   Example Miner (you) - on spread, veldspar, kernite
     140000006   Example Alt - on focus, no filter
   ```
@@ -248,7 +326,7 @@ data: this is about what the reply tells the player.
 
   ```text
   > /atm filter add veldspar kernite blue ice zeolites
-  AlternateMiningDrones added veldspar, kernite, blue, ice (any ice rock), zeolites.
+  AdvancedUtilityDrones added veldspar, kernite, blue, ice (any ice rock), zeolites.
     ore   : 1. veldspar   2. kernite
     ice   : 1. blue   2. ice (any ice rock)
     moon  : 1. zeolites
@@ -332,7 +410,7 @@ name the client shows instead of a numeric ID nobody without staff rights ever s
   (`/atm copy <part of a name>` and `/atm copy User:<id>`) next to every stored character, marks the
   caller as `(you)` and says that a character shows up once they have used an `/atm` command.
 - The queue a reply prints and the queue the file stores are the same tokens, so
-  `config/alternateMiningDrones.players.json` holds what the player read in game:
+  `config/advancedUtilityDrones.players.json` holds what the player read in game:
   `"oreFilter": ["veldspar", "ice"]`. An entry written by 1.2.2 - three per-kind buckets - is read as
   the queue it describes, so an upgrade keeps every setting.
 
@@ -362,7 +440,7 @@ handed from one character to another.
   a queue the source never set is dropped from the target as well, so the two characters really are
   identical afterwards. A source with nothing saved is refused, so a mistyped ID cannot wipe a
   character's settings - `/atm reset` is still how you deliberately go back to the defaults.
-- `allowPlayerCopy` (env `EVEJS_ALT_MINING_DRONES_ALLOW_PLAYER_COPY`, default `true`). `false`
+- `allowPlayerCopy` (env `EVEJS_ADVANCED_UTILITY_DRONES_ALLOW_PLAYER_COPY`, default `true`). `false`
   removes the command; it is refused as well when `allowPlayerToggle` is `false`, while the
   read-only listing still answers.
 - The copy goes through the same write path as every other setting, so it survives a restart and the
@@ -372,7 +450,7 @@ handed from one character to another.
 
 - The settings are not account-bound and not private - every entry sits in one server-side file - so
   copying from another player is allowed by default. `allowPlayerCopy: false` in
-  `config/alternateMiningDrones.json` (or the environment variable) turns it off.
+  `config/advancedUtilityDrones.json` (or the environment variable) turns it off.
 - Nothing else changed: same commands, same files, drop-in over 1.2.1.
 
 ---
@@ -390,7 +468,7 @@ which made the command look as if it had not been understood.
   character's mining drones onto the best rock under the new queue. A drone already on the
   top-ranked rock is left alone rather than restarted, and a queue that leaves a working drone
   nothing to mine brings it home with the recall reason `queue changed`.
-- `retargetOnFilterChange` (env `EVEJS_ALT_MINING_DRONES_RETARGET_ON_FILTER_CHANGE`, default `true`).
+- `retargetOnFilterChange` (env `EVEJS_ADVANCED_UTILITY_DRONES_RETARGET_ON_FILTER_CHANGE`, default `true`).
   `false` restores the 1.2.0 behaviour, where only idle drones follow a new queue.
 - The replies to the queue commands say so, and `status` counts the re-targets.
 
@@ -409,7 +487,7 @@ to mine became an ordered list per kind of rock instead of an unordered set.
 
 ### Changed
 
-- **The command is `/atm` now** (plain chat: `!atm`). `/altmining`, `/alternateminingdrones` and
+- **The command is `/atm` now** (plain chat: `!atm`). `/altmining`, `/advancedutilitydrones` and
   `!amd` still work, so nobody has to relearn anything.
 - **`ore` / `ice` / `moon` moved under `filter`** and take `add`, `del`, `clear` and `list`:
   `/atm filter ore add 1 veldspar 2 kernite` queues Veldspar ahead of Kernite, `/atm filter ore del 2`
@@ -464,7 +542,7 @@ touch - per character, from the same chat command, with no configuration file to
 ### Notes for operators
 
 - Nothing to configure: with no filter set, the mod behaves exactly as it did in 1.0.2.
-- `oreFilter` and `filterFallback` live in `config/alternateMiningDrones.players.json` next to the
+- `oreFilter` and `filterFallback` live in `config/advancedUtilityDrones.players.json` next to the
   other per-character choices, so they travel with that file and are removed with the mod.
 - With the default fallback of `any`, a kind a player did not list is still mined once nothing
   matching is in range. A player who wants a hard filter sets `fallback idle` (or turns that kind
@@ -493,10 +571,10 @@ delivered - the only thing that eventually brought it home was the stalled-drone
 
 ### Removed
 
-- `holdStopMode` - the `EVEJS_ALT_MINING_DRONES_HOLD_STOP_MODE` environment variable, the
+- `holdStopMode` - the `EVEJS_ADVANCED_UTILITY_DRONES_HOLD_STOP_MODE` environment variable, the
   `holdStopMode` JSON key, and `/altmining hold`. Its `all` value asked for the cargo hold to be
   filled after the mining bay, which no hull with a mining bay can ever do. A leftover key in a
-  config file or in `config/alternateMiningDrones.players.json` is ignored, and it disappears the
+  config file or in `config/advancedUtilityDrones.players.json` is ignored, and it disappears the
   next time that file is written. Nothing has to be edited by hand.
 
 ### Added
@@ -505,9 +583,9 @@ delivered - the only thing that eventually brought it home was the stalled-drone
   about a bay that refuses to fill can be answered straight from the log:
 
 ```text
-[alternateMiningDrones] assigned drone 9988400004288 to ore target 5020561034242 at 18855 m, flag 134 2100.25/900000 m3 free
-[alternateMiningDrones] hold stop for controller 9988400004249 (hold nearly full): flag 134 0.25/900000 m3 free, threshold 2 m3
-[alternateMiningDrones] recalled 5 mining drone(s): hold nearly full
+[advancedUtilityDrones] assigned drone 9988400004288 to ore target 5020561034242 at 18855 m, flag 134 2100.25/900000 m3 free
+[advancedUtilityDrones] hold stop for controller 9988400004249 (hold nearly full): flag 134 0.25/900000 m3 free, threshold 2 m3
+[advancedUtilityDrones] recalled 5 mining drone(s): hold nearly full
 ```
 
 - `!altmining status` prints a `hold bays` line when the hull has more than one bay the mod watches.
@@ -523,7 +601,7 @@ delivered - the only thing that eventually brought it home was the stalled-drone
 ## 1.0.1 - 2026-09-18
 
 - **Per-character settings.** Every choice a player makes is saved per character in
-  `config/alternateMiningDrones.players.json`, survives a restart, and falls back to the server
+  `config/advancedUtilityDrones.players.json`, survives a restart, and falls back to the server
   defaults for anything the character has not set.
 - **Ordinary-chat trigger.** `!altmining ...` is consumed from normal chat, so a character with no
   staff rights can drive the mod. The reply goes to the sender alone and the line is never broadcast.
@@ -541,7 +619,7 @@ delivered - the only thing that eventually brought it home was the stalled-drone
   dropped, and any folder in `mods/` that carries a `loader.js` but appears in no chain.
 - **`update.bat`**, which is `install.bat` with an update label: it archives the folder it replaces
   and reports the version it moved from and to.
-- **Launcher package** (`AlternateMiningDrones-<version>-EveJS-<evejs>-launcher.zip`) for EveJS
+- **Launcher package** (`AdvancedUtilityDrones-<version>-EveJS-<evejs>-launcher.zip`) for EveJS
   Launcher, alongside the installer package.
 
 ---

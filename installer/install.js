@@ -1,13 +1,13 @@
 "use strict";
 
 /**
- * Alternate Mining Drones - installer.
+ * Advanced Utility Drones - installer.
  *
  * The mod itself never edits EveJS source on disk; it is a loader that
  * transforms one file in memory. What has to be registered is the preload
  * itself, and each deployment offers a different place to do it:
  *
- *   Docker  docker/entrypoint.sh   --require /app/mods/AlternateMiningDrones/loader.js
+ *   Docker  docker/entrypoint.sh   --require /app/mods/AdvancedUtilityDrones/loader.js
  *   Native  StartServer.bat        NODE_OPTIONS=--require %EVEJS_REPO_ROOT%\mods\...
  *                                  (inherited by both npm start branches)
  *
@@ -23,8 +23,8 @@
  *   node install.js --server "D:\eve\v0.12.8" --docker-only
  *   node install.js --status --server "D:\eve\v0.12.8"
  *
- * It also seeds config/alternateMiningDrones.json and
- * config/alternateMiningDrones.players.json: the first only when the operator
+ * It also seeds config/advancedUtilityDrones.json and
+ * config/advancedUtilityDrones.players.json: the first only when the operator
  * has not written one, the second only when no character has played yet. Both
  * are left untouched on every later run - except that the server file is
  * brought up to the key set of the release being installed, by adding the keys
@@ -48,8 +48,8 @@ const COPY_EXCLUDED_FILES = new Set(deployment.DEV_ONLY_FILES);
 // character's saved choices - survive a reinstall untouched, and the
 // uninstaller removes exactly these two.
 const CONFIG_DIRNAME = "config";
-const SERVER_CONFIG_FILE = "alternateMiningDrones.json";
-const PLAYERS_CONFIG_FILE = "alternateMiningDrones.players.json";
+const SERVER_CONFIG_FILE = "advancedUtilityDrones.json";
+const PLAYERS_CONFIG_FILE = "advancedUtilityDrones.players.json";
 
 function out(line = "") {
   process.stdout.write(`${line}\n`);
@@ -95,7 +95,7 @@ function parseArgs(argv) {
 }
 
 // The payload is the mod folder shipped beside the installer (`mod/` and
-// `AlternateMiningDrones/` are both accepted), and this installer's parent
+// `AdvancedUtilityDrones/` are both accepted), and this installer's parent
 // directory in the development tree, where the mod is the git checkout itself.
 function payloadCandidates() {
   return [
@@ -195,10 +195,10 @@ function copyPayload(source, target) {
 function playersFileBody(payload) {
   const document = {
     _comment:
-      "Per-character settings for AlternateMiningDrones. The key is the character ID " +
+      "Per-character settings for AdvancedUtilityDrones. The key is the character ID " +
       "and every key inside an entry is optional: anything a character does not set " +
       "falls back to " + CONFIG_DIRNAME + "/" + SERVER_CONFIG_FILE + ". Values set in " +
-      "game through /atm (or the plain-chat !atm trigger) are written " +
+      "game through /aud m or /aud s (or the plain-chat !aud trigger) are written " +
       "here automatically.",
     _help:
       "enabled: true|false - automate this character's mining drones. " +
@@ -227,8 +227,45 @@ function playersFileBody(payload) {
 // keys and the version stamp, never rewrites a value that is there, and the file
 // is archived first. The players file is never touched - it holds what the
 // characters did in game, and every shape of it is read as it is.
+// This release renamed the mod from Alternate Mining Drones, so the two files
+// an operator already owns carry a name the mod no longer reads. They are
+// renamed into place instead of being left behind: without this an upgrade
+// would silently start from the packaged defaults and every character's saved
+// choices would be orphaned. A file already sitting under the new name is the
+// operator's and is never touched, and the migration then brings it up to this
+// release's key set like any other.
+const LEGACY_FILES = Object.freeze({
+  [SERVER_CONFIG_FILE]: "alternateMiningDrones.json",
+  [PLAYERS_CONFIG_FILE]: "alternateMiningDrones.players.json",
+});
+
+function carryOverLegacyFiles(configDir, options) {
+  for (const [name, legacyName] of Object.entries(LEGACY_FILES)) {
+    const file = path.join(configDir, name);
+    const legacy = path.join(configDir, legacyName);
+    if (fs.existsSync(file) || !fs.existsSync(legacy)) {
+      continue;
+    }
+    if (options.dryRun) {
+      out("[PLAN] " + CONFIG_DIRNAME + "/" + legacyName + ": would be renamed to " + name);
+      continue;
+    }
+    try {
+      fs.renameSync(legacy, file);
+      out(
+        "[ OK ] " + CONFIG_DIRNAME + "/" + name + ": carried over from " + legacyName +
+        " (the mod was renamed)",
+      );
+    } catch (error) {
+      out("[WARN] " + CONFIG_DIRNAME + "/" + legacyName + ": " + error.message);
+      out("       rename it to " + name + " by hand to keep the settings in it");
+    }
+  }
+}
+
 function seedConfig(root, payload, options, hooks = {}) {
   const configDir = path.join(root, CONFIG_DIRNAME);
+  carryOverLegacyFiles(configDir, options);
   const example = path.join(payload.dir, "config.example.json");
   const exampleText = fs.existsSync(example) ? deployment.readText(example) : "";
   const entries = [
@@ -408,7 +445,7 @@ function main(mode = "install") {
   }
 
   out("============================================================");
-  out(`  Alternate Mining Drones v${payload.version} - ${updating ? "Updater" : "Installer"}`);
+  out(`  Advanced Utility Drones v${payload.version} - ${updating ? "Updater" : "Installer"}`);
   out("============================================================");
   out(`  EveJS root : ${root}`);
   out(`  Payload    : ${payload.dir}`);
@@ -520,21 +557,21 @@ function main(mode = "install") {
     out("    Native : restart the server with StartServer.bat");
   }
   out("");
-  out(`  Confirm a boot line: [alternateMiningDrones] v${payload.version} loader ready`);
-  out("                        [alternateMiningDrones] drone tick hook installed");
+  out(`  Confirm a boot line: [advancedUtilityDrones] v${payload.version} loader ready`);
+  out("                        [advancedUtilityDrones] drone tick hook installed");
   out("");
   out("  Configuration — nothing is required: the default follows the drone");
   out("  control range of whatever ship launched the drones.");
-  out("    Server    : config/alternateMiningDrones.json (created for you, then");
+  out("    Server    : config/advancedUtilityDrones.json (created for you, then");
   out("                never overwritten). ./config is bind-mounted under Docker,");
   out("                so editing it needs a container restart, not a rebuild.");
-  out("    Players   : config/alternateMiningDrones.players.json holds one entry per");
-  out("                character; /atm writes it, and it travels with the mod.");
-  out("    Native    : mods/AlternateMiningDrones/.env");
+  out("    Players   : config/advancedUtilityDrones.players.json holds one entry per");
+  out("                character; /aud writes it, and it travels with the mod.");
+  out("    Native    : mods/AdvancedUtilityDrones/.env");
   out("    Docker    : the server service env in compose.yaml, e.g.");
-  out("                EVEJS_ALT_MINING_DRONES_TARGET_MODE=focus");
-  out("    Precedence: environment > config/alternateMiningDrones.json > .env > defaults.");
-  out("    In game   : /atm help, or !atm help from ordinary chat for characters");
+  out("                EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE=focus");
+  out("    Precedence: environment > config/advancedUtilityDrones.json > .env > defaults.");
+  out("    In game   : /aud help, or !aud help from ordinary chat for characters");
   out("                without staff rights.");
 }
 
@@ -546,7 +583,7 @@ if (require.main === module) {
     main();
   } catch (error) {
     if (!process.exitCode) process.exitCode = 1;
-    if (process.env.EVEJS_ALT_MINING_DRONES_DEBUG) out(error.stack);
+    if (process.env.EVEJS_ADVANCED_UTILITY_DRONES_DEBUG) out(error.stack);
   }
 }
 

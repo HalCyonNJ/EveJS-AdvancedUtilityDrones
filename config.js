@@ -3,12 +3,12 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const PREFIX = "EVEJS_ALT_MINING_DRONES";
-const CONFIG_FILENAME = "alternateMiningDrones.json";
-const PLAYERS_FILENAME = "alternateMiningDrones.players.json";
+const PREFIX = "EVEJS_ADVANCED_UTILITY_DRONES";
+const CONFIG_FILENAME = "advancedUtilityDrones.json";
+const PLAYERS_FILENAME = "advancedUtilityDrones.players.json";
 
 // Every knob has three spellings: an environment variable, a key in
-// <server root>/config/alternateMiningDrones.json, and a key in the mod's own
+// <server root>/config/advancedUtilityDrones.json, and a key in the mod's own
 // .env file beside loader.js. Precedence is environment > config JSON > .env,
 // so a Docker deployment (where .env is excluded from the image and ./config is
 // bind-mounted) is driven by the JSON file, while a native checkout can use
@@ -45,10 +45,28 @@ const KEYS = Object.freeze({
   maxStalledReassignments: `${PREFIX}_MAX_STALLED_REASSIGNMENTS`,
   playersFile: `${PREFIX}_PLAYERS_FILE`,
   chatTrigger: `${PREFIX}_CHAT_TRIGGER`,
+  salvageEnabled: `${PREFIX}_SALVAGE_ENABLED`,
+  salvageTargetMode: `${PREFIX}_SALVAGE_TARGET_MODE`,
+  salvageDistance: `${PREFIX}_SALVAGE_DISTANCE`,
+  salvageForeign: `${PREFIX}_SALVAGE_FOREIGN`,
 });
 
-// Per-character overrides persisted in config/alternateMiningDrones.players.json;
-// the /atm command and the chat trigger write these.
+// The names this mod answered to before it was renamed from Alternate Mining
+// Drones. An existing .env, a Docker service env or a compose.yaml keeps working
+// unchanged: the new spelling wins when both are present, and nothing else about
+// the two differs.
+const LEGACY_PREFIX = "EVEJS_ALT_MINING_DRONES";
+const LEGACY_KEY_BY_ENV = Object.freeze(
+  Object.fromEntries(
+    Object.entries(KEYS).map(([_field, name]) => [
+      name,
+      `${LEGACY_PREFIX}${name.slice(PREFIX.length)}`,
+    ]),
+  ),
+);
+
+// Per-character overrides persisted in config/advancedUtilityDrones.players.json;
+// the /aud command and the chat trigger write these.
 const PLAYER_KEYS = Object.freeze({
   enabled: "enabled",
   targetMode: "targetMode",
@@ -92,6 +110,10 @@ const JSON_KEY_BY_ENV = Object.freeze({
   [KEYS.maxStalledReassignments]: "maxStalledReassignments",
   [KEYS.playersFile]: "playersFile",
   [KEYS.chatTrigger]: "chatTrigger",
+  [KEYS.salvageEnabled]: "salvageEnabled",
+  [KEYS.salvageTargetMode]: "salvageTargetMode",
+  [KEYS.salvageDistance]: "salvageDistance",
+  [KEYS.salvageForeign]: "salvageForeign",
 });
 
 // What the mod does once the player has touched drones by hand: "hold" parks
@@ -105,13 +127,24 @@ const RANGE_MODE_SHIP = "ship";
 const RANGE_MODE_FIXED = "fixed";
 const TARGET_MODE_SPREAD = "spread";
 const TARGET_MODE_FOCUS = "focus";
+// Which wreck a salvage drone takes first: the closest one, or the furthest
+// one, so a pilot clearing a belt from the far end can say so.
+const SALVAGE_DISTANCE_NEAREST = "nearest";
+const SALVAGE_DISTANCE_FARTHEST = "farthest";
+// Whose wrecks the salvage drones may work. "off" is own wrecks only, which is
+// what the game's own auto-salvage does; "warn" also works another player's
+// wreck but says so in chat first; "allow" does it silently. The safety light is
+// a separate question and is warned about whatever this is set to.
+const SALVAGE_FOREIGN_OFF = "off";
+const SALVAGE_FOREIGN_WARN = "warn";
+const SALVAGE_FOREIGN_ALLOW = "allow";
 
 // What the mod does when the player's "what to mine" filter matches nothing in range:
 // "any" mines the closest rock anyway, "idle" leaves the drones parked.
 const FILTER_FALLBACK_ANY = "any";
 const FILTER_FALLBACK_IDLE = "idle";
 // The three buckets a rock can be filtered into. Moon ore is kept apart from
-// ordinary ore on purpose: /atm filter ore never matches a moon rock.
+// ordinary ore on purpose: /aud m filter ore never matches a moon rock.
 const ORE_FILTER_SCOPES = Object.freeze(["ore", "ice", "moon"]);
 // A queue entry is a substring of the ore's type name ("veldspar" matches
 // Veldspar, Dense Veldspar and Concentrated Veldspar alike), a type ID, or one
@@ -163,7 +196,7 @@ const DEFAULTS = Object.freeze({
   // waiting for their rock to run out: one re-target pass on the next scan.
   retargetOnFilterChange: true,
   allowPlayerToggle: true,
-  // 1 = "/atm copy" may hand one character's whole setup to another one.
+  // 1 = "/aud copy" may hand one character's whole setup to another one.
   // Players only ever copy settings, never anything account-bound, so this is
   // on by default; 0 removes the command.
   allowPlayerCopy: true,
@@ -188,6 +221,13 @@ const DEFAULTS = Object.freeze({
   maxStalledReassignments: 4,
   playersFile: "",
   chatTrigger: true,
+  // Salvage drones off a launched hull pick their own wrecks, the same way the
+  // mining ones pick rocks. On by default, because with salvageForeign=off they
+  // only ever touch wrecks their own pilot owns.
+  salvageEnabled: true,
+  salvageTargetMode: TARGET_MODE_SPREAD,
+  salvageDistance: SALVAGE_DISTANCE_NEAREST,
+  salvageForeign: SALVAGE_FOREIGN_OFF,
 });
 
 const LIMITS = Object.freeze({
@@ -350,6 +390,14 @@ function load(modDir, environment = process.env, options = {}) {
         return short;
       }
     }
+    // The spelling from before the rename, read last so the current one wins.
+    const legacyKey = LEGACY_KEY_BY_ENV[key];
+    if (legacyKey && legacyKey !== key) {
+      const legacy = source[legacyKey];
+      if (legacy != null && String(legacy).trim() !== "") {
+        return legacy;
+      }
+    }
     return undefined;
   };
   const pick = (key) => {
@@ -385,7 +433,8 @@ function load(modDir, environment = process.env, options = {}) {
   }
 
   const sources = [];
-  if (Object.keys(environment || {}).some((key) => Object.values(KEYS).includes(key))) {
+  const envNames = [...Object.values(KEYS), ...Object.values(LEGACY_KEY_BY_ENV)];
+  if (Object.keys(environment || {}).some((key) => envNames.includes(key))) {
     sources.push("environment");
   }
   if (Object.keys(jsonValues).length > 0) sources.push(CONFIG_FILENAME);
@@ -469,6 +518,28 @@ function load(modDir, environment = process.env, options = {}) {
       LIMITS.maxStalledReassignments,
     ),
     chatTrigger: readBoolean(pick(KEYS.chatTrigger), DEFAULTS.chatTrigger),
+    salvageEnabled: readBoolean(pick(KEYS.salvageEnabled), DEFAULTS.salvageEnabled),
+    salvageTargetMode: readChoice(
+      pick(KEYS.salvageTargetMode),
+      DEFAULTS.salvageTargetMode,
+      [TARGET_MODE_SPREAD, TARGET_MODE_FOCUS],
+      KEYS.salvageTargetMode,
+      problems,
+    ),
+    salvageDistance: readChoice(
+      pick(KEYS.salvageDistance),
+      DEFAULTS.salvageDistance,
+      [SALVAGE_DISTANCE_NEAREST, SALVAGE_DISTANCE_FARTHEST],
+      KEYS.salvageDistance,
+      problems,
+    ),
+    salvageForeign: readChoice(
+      pick(KEYS.salvageForeign),
+      DEFAULTS.salvageForeign,
+      [SALVAGE_FOREIGN_OFF, SALVAGE_FOREIGN_WARN, SALVAGE_FOREIGN_ALLOW],
+      KEYS.salvageForeign,
+      problems,
+    ),
     playersFile: readText(pick(KEYS.playersFile), DEFAULTS.playersFile),
     playersFilename: resolvePath(
       readText(pick(KEYS.playersFile), DEFAULTS.playersFile),
@@ -501,6 +572,11 @@ module.exports = {
   PREFIX,
   RANGE_MODE_FIXED,
   RANGE_MODE_SHIP,
+  SALVAGE_DISTANCE_FARTHEST,
+  SALVAGE_DISTANCE_NEAREST,
+  SALVAGE_FOREIGN_ALLOW,
+  SALVAGE_FOREIGN_OFF,
+  SALVAGE_FOREIGN_WARN,
   TARGET_MODE_FOCUS,
   TARGET_MODE_SPREAD,
   load,

@@ -1,4 +1,4 @@
-# How Alternate Mining Drones works
+# How Advanced Utility Drones works
 
 > **Who this is for.** Humans who want to know what this mod actually does before they run it, and AI
 > agents that have to reason about, port, or modify it later. Every claim below is checkable against
@@ -6,39 +6,50 @@
 > straight to the code.
 
 **Target:** EveJS 0.12.8 (SDE build 3396210)
-**Mod version:** 1.3.0 · **Manifest kind:** `loader` · **Backends:** native and Docker
+**Mod version:** 1.0.0-alpha · **Manifest kind:** `loader` · **Backends:** native and Docker
 **Runtime requirement:** Node.js 18+ (the installer needs it on `PATH` too)
 
 ---
 
 ## 0. The short version
 
-In EVE the **client** decides which rock a mining drone mines. It sends
-`Handle_CmdMineRepeatedly([droneID], rockID)` — `server/src/services/drone/entityService.js:90` —
-and the server mines exactly that rock. Nothing on the server ever chooses a rock for an idle mining
-drone, so a launched drone parks at `activityState = STATE_IDLE` with `droneCommand = null` until
-somebody clicks.
+In EVE the **client** decides which rock a mining drone mines and which wreck a salvage drone works.
+It sends `Handle_CmdMineRepeatedly([droneID], rockID)` —
+`server/src/services/drone/entityService.js:90` — or `Handle_CmdSalvage([droneID], wreckID)` —
+`entityService.js:95` — and the server does exactly that. Nothing on the server ever chooses a target
+for an idle drone, so a launched drone parks at `activityState = STATE_IDLE` with `droneCommand =
+null` until somebody clicks.
 
 This mod wraps `droneRuntime.tickScene` **after** the vendor tick has run
 (`server/src/services/drone/droneRuntime.js:7495`, called from `server/src/space/runtime.js:48466`)
-and, for every ship that owns an idle mining drone, calls the very same
-`commandMineRepeatedly(session, [droneID], targetID)` the client would have called. From the server's
-point of view nothing unusual happened: a mining order came in for a drone that was idle. That is the
-entire trick, and it is why the client needs no change — it already renders whatever the server says
-the drone is doing.
+and, for every ship that owns an idle drone, calls the very same
+`commandMineRepeatedly(session, [droneID], targetID)` or
+`commandSalvage(session, [droneID], targetID)` the client would have called. From the server's point
+of view nothing unusual happened: an order came in for a drone that was idle. That is the entire
+trick, and it is why the client needs no change — it already renders whatever the server says the
+drone is doing.
 
-Two further behaviours ride on the same pass: recall the ship's mining drones when the hold can no
-longer take one more unit, and recall them when one of them takes damage.
+The two kinds stop being symmetric in exactly one place: a rock belongs to nobody and a wreck belongs
+to somebody. `commandSalvage` can choose a wreck on its own — `resolveAutomaticSalvageTarget`
+(`droneRuntime.js:5411`, reached only from `commandSalvage` with a zero target) — but only ever an
+**owned** one, and only from a player's order. The mod asks the game's own loot-entitlement check
+(`server/src/services/_shared/spaceLootEntitlement.js`, `evaluateSpaceLootAccess`) about each wreck
+before it issues anything, so corporation and fleet loot rights, an abandoned wreck and an NPC wreck
+behave the way they behave everywhere else; what the safety light refuses is skipped with a warning.
+
+Three further behaviours ride on the same pass: recall the ship's drones when the hold can no longer
+take one more unit, recall them when one of them takes damage, and print the warning line about
+somebody else's wreck once per wreck per launch.
 
 - No file on disk is modified. No game client change. **Nothing to distribute to players.**
 - No GM or staff role is needed. Everything is per-character, or per-server configuration, and the
-  per-character half is reachable from ordinary chat (`!atm ...`) whatever rights the character
+  per-character half is reachable from ordinary chat (`!aud ...`) whatever rights the character
   has - see 2.3.
 - The search radius is the ship's own drone control range by default.
 
 ---
 
-## 1. Why a mining drone has no auto-target
+## 1. Why an idle drone has no auto-target
 
 `tickScene` walks `getSceneDroneEntities(scene)` and dispatches on `droneEntity.droneCommand`:
 
@@ -49,22 +60,44 @@ longer take one more unit, and recall them when one of them takes damage.
 | `"SALVAGE"`, `"REPAIR"`, `"RETURN_HOME"`, `"RETURN_BAY"` | Their own handlers. |
 | `null` | Nothing. The drone holds its orbit around the controller. |
 
+`SALVAGE` is the one row that is never reached on its own: `tickDroneSalvage`
+(`droneRuntime.js:7142`) runs the cycle for a drone that already has a `SALVAGE` task, and nothing in
+`tickScene` ever assigns one. `commandSalvage` is exported from the same module
+(`droneRuntime.js:7670`) and reached through `entityService.js:95`, so an order is the only way in —
+which is the whole gap this mod fills for salvage.
+
 `launchDronesForSession` (`droneRuntime.js:4502`) leaves a freshly launched drone in that last row:
 `activityState = STATE_IDLE` plus `clearDroneTaskState(droneEntity)` (`droneRuntime.js:4711-4713`).
 There is no acquisition step for mining the way there is for combat, so the drone is inert until a
 `CmdMineRepeatedly` arrives.
 
-### 1.1 Which drones can mine what
+### 1.1 Which drones can mine or salvage what
 
-Candidates are the ship's own mining drones: category `18` (`DRONE_CATEGORY_ID`), driven by a ship
-(`controllerID` = the controller ship's `itemID`). They are split by what they can actually harvest,
-because `commandMineRepeatedly` rejects an incompatible pairing itself ("That drone cannot mine the
-selected resource."):
+Candidates are the ship's own drones: category `18` (`DRONE_CATEGORY_ID`), driven by a ship
+(`controllerID` = the controller ship's `itemID`).
+
+**The kind is decided by the drone's own effects, not by its name.** A type that resolves a salvage
+snapshot (`droneDogma.resolveDroneSalvageSnapshot`) is a salvage drone; one that resolves a mining
+snapshot (`resolveDroneMiningSnapshot`) is a mining drone. That is the same resolution the vendor's own
+`assignDroneSalvageTask` and `commandMineRepeatedly` perform — both reject an incompatible pairing
+themselves — so a third-party hull that launches fifty drones under its own type names puts every one
+of them to work instead of the handful a name list would recognise. `classifyDroneKind`
+(`lib/runtime.js`) probes the drone against its controller and caches the answer per type ID, and it
+caches **only** effect-derived answers: a name-derived one is a guess, and the same type asked again
+with a controller in hand deserves the real answer.
+
+The name is still consulted, in two roles:
 
 ```text
-name contains "ice"                             -> ice drone -> ice rocks only
+name contains "salvage"                             -> salvage drone
+name contains "ice"                                 -> ice drone -> ice rocks only
 name contains "mining" / "excavator" / "harvester" -> ore drone -> ore rocks only
 ```
+
+1. it is the fallback when the effects cannot be read at all — no controller at hand, an unreadable
+   type record — and
+2. it is what splits ore from ice, because the game's own records do not: all 18 mining drones resolve
+   the same `mining` effect, ice harvesters included.
 
 Matching on the name is safe because EveJS resolves every type name through `localName`
 (`server/src/services/_shared/referenceData.js:81`), which prefers the `en` string.
@@ -89,7 +122,7 @@ property on the module exports is enough to intercept every scene tick without t
 
 ```js
 const original = exported.tickScene;
-exported.tickScene = function alternateMiningDronesTickScene(scene, now) {
+exported.tickScene = function advancedUtilityDronesTickScene(scene, now) {
   const result = original.call(this, scene, now);   // vendor tick first
   runtime.onSceneTick(scene, now);                  // then this mod
   return result;
@@ -123,7 +156,7 @@ The installer therefore appends the preload **last** in the continuation list
 exec node \
   --require /app/mods/fourModeAsteroidBelts/loader.js \
   ...                                              \
-  --require /app/mods/AlternateMiningDrones/loader.js \
+  --require /app/mods/AdvancedUtilityDrones/loader.js \
   .
 ```
 
@@ -150,15 +183,15 @@ if exist "...\autopilotJumpZero\loader.js" (
     set "NODE_OPTIONS=--require=".../autopilotJumpZero/loader.js""
   )
 )
-rem --- AlternateMiningDrones: preload the server-side loader ---
-if exist "...\AlternateMiningDrones\loader.js" (
+rem --- AdvancedUtilityDrones: preload the server-side loader ---
+if exist "...\AdvancedUtilityDrones\loader.js" (
   if defined NODE_OPTIONS (
-    set "NODE_OPTIONS=%NODE_OPTIONS% --require=".../AlternateMiningDrones/loader.js""
+    set "NODE_OPTIONS=%NODE_OPTIONS% --require=".../AdvancedUtilityDrones/loader.js""
   ) else (
-    set "NODE_OPTIONS=--require=".../AlternateMiningDrones/loader.js""
+    set "NODE_OPTIONS=--require=".../AdvancedUtilityDrones/loader.js""
   )
 )
-rem --- AlternateMiningDrones: end AlternateMiningDrones preload ---
+rem --- AdvancedUtilityDrones: end AdvancedUtilityDrones preload ---
 ```
 
 A neighbouring block is treated as **one unit** however many lines it spans: a marker-delimited block,
@@ -187,10 +220,10 @@ were written, and a container launch silently hands a wrapper the wrong exports 
 
 ```text
 Docker launch chain (--require order; the last entry owns the outermost hook)
-  run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AlternateMiningDrones
-  run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AlternateMiningDrones
-Native loader chain : autopilotJumpZero -> AlternateMiningDrones
-                      (AlternateMiningDrones is required last, so it owns the outermost hook)
+  run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
+  run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
+Native loader chain : autopilotJumpZero -> AdvancedUtilityDrones
+                      (AdvancedUtilityDrones is required last, so it owns the outermost hook)
                       no loader block is dropped
 ```
 
@@ -221,14 +254,22 @@ the audit reports its line number so it can be moved above this block or switche
 
 ### 2.2 The chat overlay
 
-`/atm` is an overlay on `chatCommands.executeChatCommand`, installed the same way
+`/aud` is an overlay on `chatCommands.executeChatCommand`, installed the same way
 `fourModeAsteroidBelts` installs `/beltmode` and `/beltvolume`: the previous function is captured, a
-new one replaces the exported property, and anything that is not an `/atm` message is handed
+new one replaces the exported property, and anything that is not an `/aud` message is handed
 `COMMANDS_HELP_TEXT` (a joined string, not an array — see `chatCommands.js:512-658`), so `/help`
-lists them — what is appended is the top-level list, the commands that follow `/atm`, and the
-filter's own list is behind `/atm filter help`, which keeps `/atm help` to one screen. Both lists are
-built the same way (one line per command, the line being what to type), and the filter answers to `f`
-as well as to its own name.
+lists them — what is appended is the root list (the two menus), the commands that follow `/aud m`, and
+the filter's own list behind `/aud m filter help`, which keeps `/aud m help` to one screen. Every list
+is built the same way (one line per command, the line being what to type), and the filter answers to
+`f` as well as to its own name.
+
+`handleCommand` is a router and nothing else. The first word after `/aud` picks the menu — `m`/`mining`
+for the miners, `s`/`salvage` for the salvagers — and a bare `/aud` prints the root list rather than
+guessing a kind, because a bare `off` would be ambiguous: `/aud m off` and `/aud s off` are two
+different switches. `copy` and `reset` sit outside the menus because they cover a whole character
+rather than one kind of drone. `lib/chatCommand.js` holds the whole grammar; the two menus share the
+helpers for the settings that belong to a character (radius, threshold, takeover), so neither menu
+owns them.
 
 Consumers destructure that export at load time (`slashService.js:15`, `lscService.js:11`,
 `xmppStubServer.js:27`), which is fine **because the overlay is installed when `chatCommands` is first
@@ -241,10 +282,10 @@ and each marks itself with its own `Symbol.for(...)` to stay idempotent.
 
 A line the player types without a leading `/` never reaches `executeChatCommand`. The client sends
 `/`-prefixed input as a `slash.SlashCmd` call (`slashService.js:211`; `slash-debug.log` records the raw
-line arriving as `command="/atm focus"`), while anything else is an XMPP `groupchat` message.
+line arriving as `command="/aud m focus"`), while anything else is an XMPP `groupchat` message.
 `xmppStubServer.handleGroupMessage` (`xmppStubServer.js:2727`) reads the body, and for a plain line it
 goes straight to `chatRuntime.broadcastLocalMessage(session, body)` (`chatRuntime.js:1702`) and then to
-`deliverRoomMessage(...)` - unconditionally, and without asking anything. So `!atm` cannot be
+`deliverRoomMessage(...)` - unconditionally, and without asking anything. So `!aud` cannot be
 handled in `chatCommands`; it has to be consumed at the broadcaster.
 
 `broadcastLocalMessage` is therefore the third wrapped export
@@ -268,8 +309,10 @@ edits no file on disk - the seam is an exported function, not a source transform
 
 Two consequences are worth knowing:
 
-- The reply arrives as a system message in the channel, exactly as the `/atm` output does, so a
-  client renders both the same way.
+- The reply arrives as a system message in the channel, exactly as the `/aud` output does, so a
+  client renders both the same way. The **salvage warning** cannot use this path: a warning is printed
+  from a scene tick, not from a command, so `lib/runtime.js` sends it through
+  `chatRuntime.broadcastLocalMessage` directly - local chat, where a public suspect flag belongs.
 - Leave the error's `code` unset. `password_required`, `invite_required`, `banned`, `muted` and the
   `*_mismatch` / `not_allowed` / `denied` codes are translated into their own text first, which would
   replace the reply.
@@ -284,7 +327,8 @@ buckets the scene's drones by `controllerID`, and for each ship:
 1. **Keeps only mining drones** (`classifyMiningDroneKind`, see 1.1). A ship with none costs one
    `filter`.
 2. **Checks for damage first** (section 5). A recall beats any assignment.
-3. **Honours the player switch.** `/atm off` stops here.
+3. **Honours the player switch of that kind.** `/aud m off` stops the mining pass, `/aud s off` the
+   salvage one; each pass reads its own switch.
 4. **Skips a warping ship** (`controllerEntity.mode === "WARP" || warpState`).
 5. **Keeps only idle drones**: no `droneCommand`, no `droneAssist`,
    `activityState === STATE_IDLE`, and not inside the 120 s post-recall suppression window.
@@ -318,10 +362,11 @@ later tick, including the depleted-rock path that returns it to `STATE_IDLE`
 
 ### 3.1 The "what to mine" queue
 
-A player can narrow the pool further with `/atm filter ...`; the choice is kept per character in the
-players file as `oreFilter`. It is one more predicate on the candidate list, applied after the kind
-match and the range test, so nothing else in this chapter changes - a rock the queue does not want is
-simply never scored.
+A player can narrow the pool further with `/aud m filter ...`; the choice is kept per character in the
+players file, under `mining.oreFilter`. It is one more predicate on the candidate list, applied after
+the kind match and the range test, so nothing else in this chapter changes - a rock the queue does not
+want is simply never scored. **Salvage has no such queue**: there is no ore in a wreck to name, so the
+only choices a salvager has are which end of the field to start at and whose wrecks may be worked.
 
 - The queue is an ordered array of tokens in priority order, and `lib/oreQueue.js` owns the grammar:
   every reader, writer and printer of the queue goes through it. Since 1.2.9 a token a command may
@@ -378,7 +423,7 @@ simply never scored.
   empty bucket meaning that whole kind), which is how an upgrade keeps a queue that was set before
   1.2.3; `setPlayerOreFilter` normalizes through the same reader, so a hand-written or half-typed
   queue never reaches the file.
-- `/atm filter` (short spelling `/atm f`) takes four verbs - `add`, `move`, `del` and `clear` - plus the `grade` and `fallback`
+- `/aud m filter` (short spelling `/aud m f`) takes four verbs - `add`, `move`, `del` and `clear` - plus the `grade` and `fallback`
   switches. `parseEdits(words, {positions})` pairs each name with the number that follows it, and
   only `move` reads positions; `add` ignores a number and joins the end of the queue.
   `oreQueue.placeTokens` puts each entry at that place inside the list of the kind it mines, lifting
@@ -401,7 +446,7 @@ simply never scored.
   for the pre-1.2.1 behaviour, where only idle drones follow the queue.
 - A queue widens the scan (`filterScanLimit`, default 512 rather than `maxCandidates`), because the
   nearest 48 rocks may all be ones the player does not want.
-- `describeSceneOres` backs `/atm list`: it groups the candidates per type, sorts the queued types by
+- `describeSceneOres` backs `/aud m list`: it groups the candidates per type, sorts the queued types by
   rank and the rest by distance, and prints the names a player can queue.
 - **Every reply that shows or changes the queue prints it as one numbered list per kind, and the
   kind comes from the game's own item types.** `lib/oreNames.js` builds a catalogue on first use out
@@ -418,28 +463,28 @@ simply never scored.
   (`oreQueue.placeTokens`) and `del` (`oreQueue.removeMatching`) all read it. `groupByKind` numbers
   each list on its own, which is the number `add`, `move` and `del` take; an entry that matches no
   rock at all lands on the `warning` line, with suggestions from `lib/nameMatch.js` - the same
-  edit-distance rule `/atm copy` uses to tolerate a misspelling.
+  edit-distance rule `/aud copy` uses to tolerate a misspelling.
 
 ### 3.2 Copying a setup between characters
 
 A mining fleet is usually several accounts flown by one person, and retyping a queue on every alt is
-how a fleet ends up mining four different rocks. `/atm copy <who>` reads one character's entry out
+how a fleet ends up mining four different rocks. `/aud copy <who>` reads one character's entry out
 of the players file and writes it onto the caller - mode, threshold, takeover rule, range and the
 whole queue, token for token - so the two are identical afterwards.
 
 - **The identifier** is parsed by `lib/copySettings.js`: a character ID (`140000005`), the client's
   `User:<id>` label (`user:`, `id:`, `char:`, `character:`, `pilot:` and `name:` are all accepted in
   front of it), or a character name. A name is matched exactly first, then as a prefix, then as a
-  substring, then with every word of the query somewhere in the name - so `/atm copy miner example`
-  finds `Example Miner` - and last with one or two typo edits per word of the name (`/atm copy
+  substring, then with every word of the query somewhere in the name - so `/aud copy miner example`
+  finds `Example Miner` - and last with one or two typo edits per word of the name (`/aud copy
   exampel`), which is the only lever a player has: the client prints `User:<id>` without ever saying
   what the number means. A query that fits more than one entry is refused with the candidates instead
   of guessed.
-- **`/atm copy` on its own is the finder**, not just a listing: it prints both search forms next to
+- **`/aud copy` on its own is the finder**, not just a listing: it prints both search forms next to
   every stored character, marks the caller as `(you)` and says that a character appears here once
-  they have used any `/atm` command - which is what writes `characterName` into the entry.
+  they have used any `/aud` command - which is what writes `characterName` into the entry.
 - **Only the players file can be a source**, so a character who never changed anything has nothing to
-  copy and the command says so - `/atm reset` is the deliberate way back to the server defaults.
+  copy and the command says so - `/aud reset` is the deliberate way back to the server defaults.
 - **The write is a replace, not a merge.** `playerSettings.replace()` (`lib/playerSettings.js`) drops
   the `updatedAt` / `characterName` / `_comment` metadata and stores what the source has as the
   target's whole entry, deleting the target's entry when nothing is left. That is the opposite of
@@ -449,20 +494,69 @@ whole queue, token for token - so the two are identical afterwards.
   values already merged with the server defaults) and `copyPlayerSettings(sourceID, targetID,
   meta)`. The command layer formats the reply; the store and the runtime do the lookup and the write.
 - **Two readers, one matcher.** `lib/copySettings.js` answers "which stored characters does this
-  text name" once (`matchStoredCharacters`) and both forms of the command read it: `/atm copy
-  <who>` wants exactly one answer and refuses an ambiguous one, `/atm copy list [who]` wants them
+  text name" once (`matchStoredCharacters`) and both forms of the command read it: `/aud copy
+  <who>` wants exactly one answer and refuses an ambiguous one, `/aud copy list [who]` wants them
   all so the roster can be narrowed by the same prefix / substring / any-order / typo tiers. The
   trim to `MAX_COPY_LIST_LINES` happens in the reply, never in the matcher, so a narrowed list can
   never hide a match behind a truncation that counted other people's entries.
 - **Drones already mining follow the copy** for free: a copy is just another write to the players
   file, so `noteQueueSignature` (3.1) sees the new queue on the next pass and re-targets exactly as
-  it does after a `/atm filter` command.
+  it does after a `/aud m filter` command.
 - **Who may copy from whom.** The settings are not account-bound and not private - every entry lives
   in one server-side file - so copying from another player is allowed. `allowPlayerCopy: false` (env
-  `EVEJS_ALT_MINING_DRONES_ALLOW_PLAYER_COPY`) removes the command, and `allowPlayerToggle: false`
+  `EVEJS_ADVANCED_UTILITY_DRONES_ALLOW_PLAYER_COPY`) removes the command, and `allowPlayerToggle: false`
   refuses the write while the read-only listing still answers.
 - The command needs the caller's own character ID and nothing else, so a character without staff
-  rights can use it through the plain-chat trigger: `!atm copy User:140000005`.
+  rights can use it through the plain-chat trigger: `!aud copy User:140000005`.
+
+### 3.3 The salvage pass
+
+`runSalvageShipPass` (`lib/runtime.js`) runs after the mining pass for the same controller, on the
+same throttled tick, and it is deliberately the same shape: the idle gate, the damage recall, the
+warping check and the hold rule are the mining ones, reused. What differs is what a candidate is.
+
+1. **Keeps only salvage drones** - `classifyDroneKind(...) === "salvage"`, the effect probe of 1.1.
+2. **Lists the wrecks** with `listSceneWrecks`: every entity the vendor's own
+   `salvagerRuntime.isSalvageableTarget` accepts inside the resolved control range, sorted by surface
+   distance.
+3. **Asks the game about each wreck once per pass** - `evaluateWreckAccess(session, scene, entity)`
+   wraps `spaceLootEntitlement.evaluateSpaceLootAccess` and answers `{ entitled, blocked,
+   requiresSuspectTimer }`. It is one call per *wreck*, not per drone: on a hull that launches fifty
+   drones the answer would be the same fifty times, and the check reaches into character, fleet and
+   crimewatch state.
+4. **Drops what this pilot may not have.** `blocked` - what the safety light refuses - is skipped and
+   warned about; a wreck that is not `entitled` is skipped unless `salvageForeign` opens it up, and
+   then `warn` prints the line.
+5. **Scores what is left**:
+
+```text
+spread : score = (+/-)distance + (drones already sent to that wreck * claimPenaltyMeters)
+focus  : score = (+/-)distance
+```
+
+   The sign is `/aud s distance`: `nearest` is the mining rule unchanged, `farthest` flips it so the
+   field is worked from the far end. The penalty is the mechanism that spreads a mining flight out,
+   reused - and the claims map is **per controller**, so two hulls sharing a field, or one pilot
+   running two of them, cannot count a wreck against each other. A wreck the pilot is *entitled* to
+   always beats one that would flag them, whatever the distance rule says.
+6. **Checks the hold** before each order, against the cargo hold, and recalls the whole squadron when
+   it is full (section 5).
+7. **Issues the order**: `droneRuntime.commandSalvage(session, [droneID], targetID)` with the target
+   named explicitly, so the vendor's owned-only automatic picker is not what decides; the entitlement
+   question above is the only one that was asked.
+
+**The warning is once per wreck per launch.** `salvageWarnedWrecks` is a per-character set, and
+`resumeDrones` clears a character's salvage warnings whenever salvage drones are launched again - the
+operator's own loop is fly in, launch, salvage, scoop, move on, launch again. A wreck goes into the
+set only *after* the line has been sent, so a warning that could not reach anybody yet is still
+printed the first time it can.
+
+**What a drone takes is the game's business.** The mod grants nothing: `salvagerRuntime.
+executeSalvagerCycle` decides what a cycle yields and where it lands, so loot rights, the salvage
+skill and the wreck's contents behave exactly as they do for a manual order. This server grants drone
+salvage into `ITEM_FLAGS.CARGO_HOLD` (`server/src/space/modules/salvagerRuntime.js`, and its own space
+check reads cargo), while the SDE's `specialSalvageHoldCapacity` (attribute 1559, flag 137) plays no
+part in the drone path - which is why section 5 judges a salvage squadron on cargo space.
 
 ---
 
@@ -490,9 +584,9 @@ both drone skills at V and three Drone Link Augmentor I is 20000 + 40000 + 60000
 Attribute ids are looked up by name at runtime (`getAttributeIDByNames`, `liveFittingState.js:312`)
 with the SDE ids as a fallback, so a future SDE rename degrades instead of breaking.
 
-The result is cached on the ship entity as `altMiningDronesRange` and invalidated by the dogma
+The result is cached on the ship entity as `advancedUtilityDronesRange` and invalidated by the dogma
 fingerprint, so a refit or a trained level takes effect on the next scan without a restart. It is then
-clamped to `rangeMinMeters..rangeMaxMeters`, and a per-character `/atm range <meters>` override
+clamped to `rangeMinMeters..rangeMaxMeters`, and a per-character `/aud m range <meters>` override
 takes precedence over it.
 
 `rangeMode: "fixed"` — or simply setting `rangeMeters` — skips all of the above and uses one number
@@ -533,7 +627,7 @@ Drones carry the same `conditionState` as a ship — `{ damage, armorDamage, shi
 (`itemStore.js:1550`) — written by the generic damage path (`server/src/space/combat/damage.js:374`,
 `:501`) against `shieldCapacity` / `armorHP` / `structureHP` (`droneRuntime.js:2793-2811`).
 
-Each scan computes `1 - currentHP/maxHP` and stores it as `drone.altMiningDronesDamageFraction`. A
+Each scan computes `1 - currentHP/maxHP` and stores it as `drone.advancedUtilityDronesDamageFraction`. A
 drone whose fraction grows by more than `damageThreshold` (default 0, i.e. any damage at all) triggers
 a recall of **every** mining drone of that ship — a partly-stripped flight is worse than no flight.
 The drone entity itself is never modified beyond that one bookkeeping field, so nothing else that
@@ -542,7 +636,7 @@ reads drone state is affected.
 ### 5.3 How the recall is issued
 
 `droneRuntime.commandReturnBay(session, droneIDs)` (`droneRuntime.js:4955`) — the same handler as
-`Handle_CmdReturnBay`. Each recalled drone is stamped with `altMiningDronesRecalledAtMs = now`, and
+`Handle_CmdReturnBay`. Each recalled drone is stamped with `advancedUtilityDronesRecalledAtMs = now`, and
 this mod will not re-task it for 120 s. That window matters: a returning drone is briefly still
 visible in the scene, and the stamp is the backstop if its `activityState`/`droneCommand` have not yet
 switched away from idle.
@@ -566,7 +660,7 @@ finds nothing to mine:
 
 1. compare the scene's mineable-looking static entities against `byEntityID`,
 2. remember each entity the cache does not know about in
-   `scene.altMiningDronesUnknownMineableIDs`,
+   `scene.advancedUtilityDronesUnknownMineableIDs`,
 3. rebuild **only** when that set gains a new id.
 
 The "only on a new id" rule is what keeps this from being a timer: geometry the cache will never
@@ -578,7 +672,7 @@ costs one rebuild, and is then remembered. A belt full of such entities cannot m
 ## 7. Configuration and failure behaviour
 
 `config.js` reads, highest precedence first: a real environment variable, then
-`<runtime root>/config/alternateMiningDrones.json` (bind-mounted under Docker, so it can be edited
+`<runtime root>/config/advancedUtilityDrones.json` (bind-mounted under Docker, so it can be edited
 without an image rebuild), then the mod's own `.env`, then the built-in default. `.env` is a file, so
 the JSON wins over it; `.dockerignore` excludes `**/.env` from the image, which is why the JSON path
 exists at all.
@@ -586,28 +680,37 @@ exists at all.
 `RANGE_MODE` has no forced default: leaving it unset selects `fixed` when `RANGE_METERS` is set and
 `ship` otherwise, so "just tell me a distance" and "just follow my ship" both do what they read like.
 
-Three settings exist per character and fall back to the JSON above when a character has not set them:
+The per-character settings fall back to the JSON above when a character has not set them, and they
+live in `config/advancedUtilityDrones.players.json` - one entry per character, written by `/aud` and
+by the `!` trigger, re-read within 5 s of a hand edit, archived and removed by `uninstall.bat`, and
+relocatable with `playersFile`. Inside an entry the two kinds of drone sit side by side, because the
+two squadrons are separately switched:
 
-- `targetMode` - `spread` (one rock per drone) or `focus` (every drone on one rock).
-- `minHoldFreeVolumeM3` - the room the destination hold must still have before another rock is worth
-  assigning (default 2 m3). Ore is worth at least 1 m3 and a rock is mined whole, so a hold that cannot
-  take a full unit otherwise turns into an idle/mining flap.
-- `playerControlPolicy` - `hold` leaves a hand-ordered drone alone until it is launched again,
-  `recall` reacts only to a manual recall, `off` keeps automating it.
+- `mining.enabled`, `mining.targetMode` (`spread` = one rock per drone), `mining.oreFilter`,
+  `mining.filterFallback` and `mining.filterGrade` - what the mining drones do (3.1).
+- `salvage.enabled`, `salvage.targetMode` (`spread` = one wreck per drone), `salvage.distance` and
+  `salvage.foreign` - what the salvage drones do (3.3).
+- `rangeOverrideMeters`, `minHoldFreeVolumeM3` and `playerControlPolicy` sit at the top level of the
+  entry, because a radius, a hold margin and a takeover rule are not one kind's business -
+  `minHoldFreeVolumeM3` is the room the destination hold must still keep before another unit is worth
+  assigning (default 2 m3, and the reason a nearly-full hold cannot turn into an idle/working flap),
+  and `playerControlPolicy` is `hold` (a hand-ordered drone is left alone until it is launched again),
+  `recall` (only a manual recall parks drones) or `off` (keep automating them).
 
-They live in `config/alternateMiningDrones.players.json`, one entry per character, written by
-`/atm` and by the `!` trigger, re-read within 5 s of a hand edit, archived and removed by
-`uninstall.bat`, and relocatable with `playersFile`. `/atm copy <id|name>` reads one of those
-entries and writes it onto another character (3.2); `allowPlayerCopy` (env
-`EVEJS_ALT_MINING_DRONES_ALLOW_PLAYER_COPY`, default `true`) is the switch that removes the command.
+`lib/playerSettings.js` owns that shape: `KIND_KEYS` names the two kinds and the values each accepts,
+and an entry written by an older release - 1.3.0's flat `enabled` / `targetMode` / `oreFilter` - is
+folded into `mining` as it is read, with a key nested under `mining` winning over the same key at the
+top level. `/aud copy <id|name>` reads one of those entries and writes it onto another character
+(3.2); `allowPlayerCopy` (env `EVEJS_ADVANCED_UTILITY_DRONES_ALLOW_PLAYER_COPY`, default `true`) is
+the switch that removes the command.
 
 **The mod fails closed.** Any problem in the configuration — a non-numeric distance, an out-of-range
 interval, an unknown `targetMode` — is logged with the offending key, and the loader installs nothing
 at all:
 
 ```text
-[alternateMiningDrones] EVEJS_ALT_MINING_DRONES_SCAN_INTERVAL_MS must be between 100 and 60000
-[alternateMiningDrones] invalid mod-owned configuration - no hooks installed
+[advancedUtilityDrones] EVEJS_ADVANCED_UTILITY_DRONES_SCAN_INTERVAL_MS must be between 100 and 60000
+[advancedUtilityDrones] invalid mod-owned configuration - no hooks installed
 ```
 
 Mining drones then behave exactly like vanilla. Every entry point is also wrapped, so a throw inside
@@ -626,6 +729,7 @@ Verified against the other server-side mods installed on this server:
 | `moonOreAnomalies` | `dungeonUniverseRuntime.js` and dungeon content packs | None. Different files entirely. |
 | `autopilotJumpZero` | `beyonceService.js`, and the launcher's `NODE_OPTIONS` list | None. Different files, and both blocks append, so both load. It has to stay *first* in the preload list and this mod *last* (2.1). |
 | `EveJS-MoonMining-Fix` | `moonMiningBootstrap.js`, `moonOreChunkSpawner.js` | None. Different files. Section 6 is what makes moon-ore chunks reachable. |
+| Any "more drones per hull" mod | Nothing this mod knows about | None, and that is the point. The kind of a drone is read from its own effects (1.1), the drone list comes from the scene rather than a fixed roster, and the claims map is per controller and sized by nothing. A hull that launches fifty drones puts all fifty to work. |
 
 ### Invariants to preserve if you modify this mod
 
@@ -642,6 +746,14 @@ Verified against the other server-side mods installed on this server:
    per-ship pass each have their own try/catch and log instead.
 6. **Never claim `NODE_OPTIONS` in the launcher.** Append, and let the installer place the block after
    every other writer - then re-run it after installing another mod that preloads. See 2.1.
+7. **Never skip the entitlement check before a salvage order.** `evaluateWreckAccess` is what keeps
+   this mod from making a suspect out of a player who never asked for one, and `salvageForeign` is the
+   only switch that may widen it. Issuing `commandSalvage` at a wreck the check refused is exactly the
+   bug the guard exists to prevent - the vendor function does not consult entitlement at all.
+8. **Never guess a drone's kind from a hard-coded type or name list.** The effect probe is what keeps
+   third-party hulls working; a list would quietly leave their drones idle.
+9. **Keep the claims map per controller.** One map per scene would let two hulls in one belt starve
+   each other, and would get worse the more drones a hull launches.
 
 ---
 
@@ -651,7 +763,7 @@ Verified against the other server-side mods installed on this server:
 RunTests.bat      (or: node test/run.js)
 ```
 
-96 cases over nine areas:
+107 cases over ten areas:
 
 - **Range arithmetic** — the 120 km Rorqual case, the 140 km implant case, the 20 km base, fixed mode.
 - **Target selection** — idle drones only, range culling, ore/ice separation, spread vs focus, a drone
@@ -675,8 +787,8 @@ RunTests.bat      (or: node test/run.js)
   a compressed prefix stripped), the richest rock of a family picked first with the preference on,
   the switch stored per character with `default` going back to the server setting, and the switch
   being part of the signature that re-tasks a drone that is already mining.
-- **The two help lists** — `/atm help` carrying only the top-level commands and pointing at
-  `/atm filter help`, which carries the filter's own commands in the same one-line-per-command
+- **The two help lists** — `/aud m help` carrying only the top-level commands and pointing at
+  `/aud m filter help`, which carries the filter's own commands in the same one-line-per-command
   shape, both readable with `allowPlayerToggle: false`, and `f` answering wherever `filter` does.
 - **The ore-name catalogue** — a rock's kind from its item group (ore, ice, moon, and a decorative
   asteroid left out), a type ID resolved the same way, the live mining state outranking the table,
@@ -686,29 +798,37 @@ RunTests.bat      (or: node test/run.js)
 - **The two shapes of the command** — a bare `copy` answering with the examples and nothing else, the
   `copy list` roster with the caller marked, a roster narrowed by a name or by the `User:<id>` label
   the client shows, and a filter that matches nobody answering with the way back to the full list.
+- **Salvage** — only the pilot's own wreck worked and the nearest one first, `distance farthest`
+  flipping the order, a foreign wreck worked with one warning per launch (`warn`) and in silence
+  (`allow`), a wreck the safety light refuses skipped with its own warning, two hulls sharing a field
+  not counting a wreck against each other, the salvage menu being its own set of switches, a 1.3.0 flat
+  players entry read as the mining kind, and a hull that launches fifty drones putting every one of
+  them to work - for salvage and for mining alike.
+- **Drones that are not ours** — a third-party drone flown by the effect its type carries rather than
+  by its name, for salvage and for ore, and a drone whose type carries neither effect left alone.
 - **The installer** — the entrypoint and `StartServer.bat` transforms, idempotency, byte-exact
   removal, stepping over a neighbour's multi-line block, a neighbour that installs later landing in
   front of this one, repairing a mis-ordered block, the loader chain audits for both deployments,
   `--docker-only`/`--native-only` restraining both the install and the report, a full
   install/reinstall/uninstall against a throwaway EveJS tree, and the configuration migration that
-  adds the keys an older `config/alternateMiningDrones.json` is missing without rewriting a value.
+  adds the keys an older `config/advancedUtilityDrones.json` is missing without rewriting a value.
 
 All of it runs with dependency injection or fixture text; no server is started and no game data is
 touched, which is why `RunTests.bat` is safe to run on a live box.
 
 ## 10. Packaging and distribution
 
-**Distribution is the GitHub repository.** `HalCyonNJ/EveJS-AlternateMiningDrones` *is* this folder, so
+**Distribution is the GitHub repository.** `HalCyonNJ/EveJS-AdvancedUtilityDrones` *is* this folder, so
 the per-tag `Source code (zip)` GitHub generates is the release artifact: there is no local build step
 and no archive to keep, because the installer half and the payload are the same tree the user
 downloads. This replaced the old `BuildPackage.bat` / `node tools/build-package.js` step, which wrote
 two zips into `dist/` - an installer package (`install.bat` + `installer/lib/` + the payload inside
-`AlternateMiningDrones/`) and a launcher package (the payload folder alone). `dist/`, `BuildPackage.bat` and
+`AdvancedUtilityDrones/`) and a launcher package (the payload folder alone). `dist/`, `BuildPackage.bat` and
 `tools/build-package.js` were all deleted on 2026-09-20, so there is no packaging step left to run.
 
 What still matters is the pruning contract, which serves the installer alone: `installer/`, `node_modules/` and
 `.git/` are development-only and are listed in `DEV_ONLY_DIRECTORIES` in
-`installer/lib/deployment.js`, which is what keeps them out of an installed `mods/AlternateMiningDrones`.
+`installer/lib/deployment.js`, which is what keeps them out of an installed `mods/AdvancedUtilityDrones`.
 `DEV_ONLY_FILES` is empty now that the packaging tools are gone - if a development file ever appears at
 the mod root again, that is the list to put it in.
 
@@ -738,7 +858,7 @@ first:
    drive cannot stall the installer.
 
 Pass 3 exists for the ordinary case where the ZIP was extracted into `Downloads`. It is a last resort:
-`--server`, `EVEJS_SERVER` and `EVEJS_ROOT` skip all three, and `EVEJS_ALT_MINING_DRONES_SEARCH_BASES`
+`--server`, `EVEJS_SERVER` and `EVEJS_ROOT` skip all three, and `EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES`
 (a `";"`-separated list) replaces the drive list that pass 3 uses. The depth limit and the budget are
 what keep this from becoming an unbounded filesystem walk: a candidate more than two levels below a
 drive root is deliberately not found, and the operator is told to pass `--server` instead.
