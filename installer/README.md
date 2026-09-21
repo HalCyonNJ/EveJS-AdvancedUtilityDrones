@@ -1,4 +1,4 @@
-# Advanced Utility Drones v1.0.0-alpha - Installer
+# Advanced Utility Drones v1.0.0 - Installer
 
 Gives mining drones the auto-targeting every other drone in the game has: a launched drone finds the
 closest ore or ice inside the ship's drone control range and starts mining, and the squadron recalls
@@ -18,6 +18,11 @@ installed copy keeps its own manual.
 
 - EveJS 0.12.8 (native Windows install, or the Docker Compose project).
 - Node.js 18 or newer on `PATH` to run the installer.
+- The `.bat` files are wrappers around plain Node programs, so every other host runs them too:
+  `node installer/install.js --server /path/to/EveJS`, or, on a Docker host with no Node,
+  `docker run --rm --user "$(id -u):$(id -g)" -v /path/to/EveJS:/repo -w /repo/mods/AdvancedUtilityDrones node:20-alpine node installer/install.js --server /repo`.
+  `--server` takes any path, and running the installer from inside an installed
+  `mods/AdvancedUtilityDrones` is supported - the folder it is run from is never pruned.
 
 ## Install
 
@@ -95,7 +100,7 @@ Native : restart the server with StartServer.bat
 Then look for these lines in the server log:
 
 ```text
-[advancedUtilityDrones] v1.0.0-alpha loader ready ...
+[advancedUtilityDrones] v1.0.0 loader ready ...
 [advancedUtilityDrones] drone tick hook installed ...
 [advancedUtilityDrones] plain-chat trigger installed ...
 ```

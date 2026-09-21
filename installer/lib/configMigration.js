@@ -27,7 +27,7 @@
  */
 
 // The release this module brings a file up to. Bump it with the mod version.
-const CURRENT_VERSION = "1.0.0-alpha";
+const CURRENT_VERSION = "1.0.0";
 
 // Which release added which setting, oldest first. Append only: a key that was
 // already in the 1.2.1 file is never listed, and a release that only changed
@@ -43,7 +43,7 @@ const RELEASES = Object.freeze([
   // rather than a record of one that shipped - a key retired before the tag
   // goes on simply never appears here.
   Object.freeze({
-    version: "1.0.0-alpha",
+    version: "1.0.0",
     added: Object.freeze([
       "salvageEnabled",
       "salvageTargetMode",

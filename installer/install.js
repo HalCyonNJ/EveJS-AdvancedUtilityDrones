@@ -169,6 +169,12 @@ function resolveRoot(options) {
 }
 
 function copyPayload(source, target) {
+  // The installer may be run from the folder it is asked to install into - the
+  // README's "put the folder in mods/AdvancedUtilityDrones and run the installer
+  // from inside it". There source and target are one directory, so the copy
+  // would be a no-op at best and the prune below would delete the installer the
+  // operator is still holding, update.bat and uninstall.bat included. Skip it.
+  if (deployment.sameDirectory(source, target)) return;
   fs.mkdirSync(target, { recursive: true });
   // Prune development-only leftovers so refreshing an existing install leaves
   // exactly the payload behind.
@@ -478,13 +484,27 @@ function main(mode = "install") {
   // 1. The mod folder itself.
   const modDir = path.join(root, "mods", deployment.MOD_ID);
   const existed = fs.existsSync(path.join(modDir, "loader.js"));
+  // The payload may BE the target: an installer run from an installed
+  // mods/AdvancedUtilityDrones. Nothing is copied then, and the report says so
+  // rather than claiming an update it did not make.
+  const selfInstall = deployment.sameDirectory(payload.dir, modDir);
   if (existed && !options.dryRun && !options.force) archiveOnce(modDir);
   if (options.dryRun) {
-    out(`[PLAN] mods/${deployment.MOD_ID}: would ${existed ? "replace" : "create"} from payload`);
+    out(
+      `[PLAN] mods/${deployment.MOD_ID}: would ` +
+        (selfInstall
+          ? "stay in place (the installer is running from the installed folder)"
+          : `${existed ? "replace" : "create"} from payload`),
+    );
   } else {
     fs.mkdirSync(path.dirname(modDir), { recursive: true });
     copyPayload(payload.dir, modDir);
-    out(`[ OK ] mods/${deployment.MOD_ID}: ${existed ? "updated" : "installed"}`);
+    out(
+      `[ OK ] mods/${deployment.MOD_ID}: ` +
+        (selfInstall
+          ? "already in place (the installer is running from the installed folder)"
+          : `${existed ? "updated" : "installed"}`),
+    );
   }
 
   // 2. Docker: preload the loader from docker/entrypoint.sh.

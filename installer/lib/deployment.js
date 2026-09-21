@@ -312,6 +312,22 @@ function copyTree(source, target) {
   fs.cpSync(source, target, { recursive: true, force: true });
 }
 
+// Two spellings of one directory: the installer run from the folder it is about
+// to install into. `path.resolve` is not enough on Windows, where the same
+// folder can be typed in any case, so the real path is asked for when it exists.
+function sameDirectory(left, right) {
+  let first = path.resolve(left);
+  let second = path.resolve(right);
+  try {
+    first = fs.realpathSync.native(path.resolve(left));
+    second = fs.realpathSync.native(path.resolve(right));
+  } catch (_error) {
+    // A path that does not exist yet keeps its resolved spelling.
+  }
+  if (process.platform === "win32") return first.toLowerCase() === second.toLowerCase();
+  return first === second;
+}
+
 module.exports = {
   BACKUP_DIRNAME,
   DEV_ONLY_DIRECTORIES,
@@ -335,6 +351,7 @@ module.exports = {
   isEveJsRoot,
   isFile,
   readText,
+  sameDirectory,
   timestamp,
   writeText,
 };

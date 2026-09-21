@@ -6,7 +6,7 @@
 > straight to the code.
 
 **Target:** EveJS 0.12.8 (SDE build 3396210)
-**Mod version:** 1.0.0-alpha · **Manifest kind:** `loader` · **Backends:** native and Docker
+**Mod version:** 1.0.0 · **Manifest kind:** `loader` · **Backends:** native and Docker
 **Runtime requirement:** Node.js 18+ (the installer needs it on `PATH` too)
 
 ---

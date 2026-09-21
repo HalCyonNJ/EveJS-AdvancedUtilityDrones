@@ -10,14 +10,27 @@ to. A server keeps its settings and every player keeps their saved choices.
 
 ---
 
-## 1.0.0-alpha - 2026-09-21
+## 1.0.0 - 2026-09-22
 
 **The mod is `AdvancedUtilityDrones` now, and it flies salvage drones as well as mining drones.**
-The command is `/aud`, the kind of drone comes first, and the version line restarts at 1.0.0-alpha
+The command is `/aud`, the kind of drone comes first, and the version line restarts at 1.0.0
 because the rename makes this a different mod from the `/atm` 1.3.0 line - not a step along it.
+
+### Fixed
+
+- **The installer no longer prunes the folder it is run from.** Installing from inside a folder that is
+  already named `mods/AdvancedUtilityDrones` - the README's own instruction - made the payload copy a
+  directory onto itself, and the pass that strips `installer/` out of an installed folder then deleted
+  the installer the operator was holding: `update.bat` and `uninstall.bat` were gone after the first
+  run. A self-install is now recognised by real path and skipped whole, and the run reports
+  `already in place` instead of claiming an update it did not make.
 
 ### Added
 
+- **The installer is documented for hosts that are not Windows.** A Linux, macOS or Docker-only host
+  runs `node installer/install.js --server <root>`, or that same command inside a momentary
+  `node:20-alpine` container when the host has no Node at all. The Windows wrappers are a shortcut,
+  not a requirement.
 - **Salvage-drone automation.** An idle salvage drone launched from a player ship now picks its own
   wreck inside the ship's drone control range, works it, and moves to the next one when it is empty -
   the same gap the mining half fills, for the same reason: `droneRuntime.commandSalvage` can pick a

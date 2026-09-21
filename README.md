@@ -134,6 +134,27 @@ nothing else. It is idempotent, it backs up every file it rewrites to
 `<EveJS root>\_advancedutilitydrones-backup\<timestamp>\` first, and `installer\uninstall.bat` removes
 its own line and leaves the rest alone.
 
+### Any other host: Linux, macOS, Docker
+
+The `.bat` files are a Windows convenience wrapped around one Node program, so nothing here needs
+Windows. On a Linux or macOS host, or on a Docker host with no Node installed at all, run the same
+installer directly, or in a throwaway container:
+
+```text
+node installer/install.js --server /path/to/EveJS
+
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v /path/to/EveJS:/repo -w /repo/mods/AdvancedUtilityDrones \
+  node:20-alpine node installer/install.js --server /repo
+```
+
+`--server` takes any path, spaces and all, and the folder still lands in
+`<EveJS root>/mods/AdvancedUtilityDrones`. Updating and uninstalling are `installer/update.js` and
+`installer/uninstall.js` with the same options, and `--status` is `installer/install.js --status`.
+Running the installer from inside an already-installed `mods/AdvancedUtilityDrones` is supported - the
+folder the installer runs from is never pruned, so `update.js` and `uninstall.js` are still there
+afterwards.
+
 ### Installer (native and Docker)
 
 Run the installer with no arguments and it assumes EveJS is installed on this computer,
@@ -164,7 +185,7 @@ Native : restart the server with StartServer.bat
 A healthy boot logs five lines:
 
 ```text
-[advancedUtilityDrones] v1.0.0-alpha loader ready - control range follows the ship by default; ...
+[advancedUtilityDrones] v1.0.0 loader ready - control range follows the ship by default; ...
 [advancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
 [advancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
 [advancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights
@@ -325,8 +346,8 @@ commands that take no kind: they cover a character rather than a squadron.
 
 Every command has exactly two spellings and nothing else: the word, and one short form of two letters.
 There is no prefix guessing, because a letter that means one thing here and another thing in the mod next
-door is worse than a word that means nothing at all. So `/aud mining fl ore clear` is `/aud mining filter
-ore clear`, `/aud mining tg spread` is `/aud mining target spread`, and `/aud salvage ds farthest` is
+door is worse than a word that means nothing at all. So `/aud mining fl cl ore` is `/aud mining filter
+clear ore`, `/aud mining tg spread` is `/aud mining target spread`, and `/aud salvage ds farthest` is
 `/aud salvage distance farthest`. What a command *takes* is always typed in full as well - `spread`,
 `focus`, `ore`, `nearest`, `hold`, a number, a name. `help` also answers to `h`, the one single letter
 left in the mod; there is no `?`.
@@ -360,7 +381,7 @@ left in the mod; there is no `?`.
 | `/aud salvage target spread` / `focus` | One wreck per drone, or the whole squadron on the same wreck. The two kinds keep separate targeting settings. |
 | `/aud salvage distance` | Which end of the field is worked first. |
 | `/aud salvage distance nearest` / `farthest` | Start at the near end, or at the far one. |
-| shorter spellings | Every command has exactly two spellings: the word and one short form of two letters - `/aud mi fl ore clear`, `/aud mi tg spread`, `/aud sa ds farthest`. Nothing else is accepted, and nothing is guessed at. `help` is the one command that also answers to a single letter, `h`. |
+| shorter spellings | Every command has exactly two spellings: the word and one short form of two letters - `/aud mi fl cl ore`, `/aud mi tg spread`, `/aud sa ds farthest`. Nothing else is accepted, and nothing is guessed at. `help` is the one command that also answers to a single letter, `h`. |
 | `/aud salvage list` | The wrecks around your ship in the order the drones will work them, nearest first, each with the character it belonged to. |
 | `/aud salvage range`, `/aud salvage threshold`, `/aud salvage control`, `/aud salvage resume`, `/aud salvage clear` | The same shared switches as the mining menu - one radius, one hold threshold, one takeover rule per character, and a `clear` that empties the salvage half alone. |
 | `/aud copy` | How to search, and where the roster of stored characters is. |

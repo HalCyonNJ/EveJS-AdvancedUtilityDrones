@@ -1,6 +1,6 @@
 # Advanced Utility Drones - Manual
 
-**Applies to** v1.0.0-alpha on EveJS 0.12.8, both deployments (native Windows and Docker Compose).
+**Applies to** v1.0.0 on EveJS 0.12.8, both deployments (native Windows and Docker Compose).
 
 Launch a mining drone and it goes to work: it picks the closest ore or ice rock inside your ship's
 drone control range, flies over and mines it, and finds the next rock when that one runs out. Launch
@@ -40,7 +40,7 @@ install on a player's machine**.
    !aud salvage status    - what the mod is doing for your salvagers right now
    !aud salvage list      - the wrecks around you, with the owner of each
    !aud salvage distance farthest   - work the field from the far end instead of the near one
-   !aud salvage d farthest          - any word may be shortened, so "d" is "distance"
+   !aud salvage ds farthest         - every command has two spellings, so "ds" is "distance"
    !aud salvage off       - back to fully manual salvaging
 ```
 
@@ -141,16 +141,42 @@ installer\install.bat
 then restart the server with `StartServer.bat`. The installer **appends** to `NODE_OPTIONS` rather
 than overwriting it, so a preload block another loader mod wrote is left intact.
 
-### 4.4 EveJS Launcher
+### 4.4 Linux, macOS and Docker hosts
+
+The `.bat` wrappers only call the Node programs beside them, so on a Linux or macOS host - or on a
+Docker host with no Node at all - run those programs yourself:
+
+```text
+node installer/install.js --server /path/to/EveJS
+node installer/update.js --server /path/to/EveJS
+node installer/uninstall.js --server /path/to/EveJS
+node installer/install.js --status --server /path/to/EveJS
+```
+
+Nothing but Docker is needed for the container form, which mounts the checkout into a node:20-alpine
+image and runs the installer there:
+
+```text
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v /path/to/EveJS:/repo -w /repo/mods/AdvancedUtilityDrones \
+  node:20-alpine node installer/install.js --server /repo
+```
+
+`--server` accepts any path, spaces included, and the mod is installed to
+`<EveJS root>/mods/AdvancedUtilityDrones` on every platform. Running the installer from inside an
+already-installed `mods/AdvancedUtilityDrones` is supported: the folder it is run from is never pruned,
+so `update.js` and `uninstall.js` survive it and the next upgrade is one command.
+
+### 4.5 EveJS Launcher
 
 The launcher wants the mod folder itself, with `evejs-launcher.mod.json` inside it: zip this folder with `AdvancedUtilityDrones\` as the archive root and hand that to the launcher.
 
-### 4.5 Checking it worked
+### 4.6 Checking it worked
 
 A healthy boot prints five lines. Search the server log for `advancedUtilityDrones`:
 
 ```text
-[advancedUtilityDrones] v1.0.0-alpha loader ready - control range follows the ship by default; ...
+[advancedUtilityDrones] v1.0.0 loader ready - control range follows the ship by default; ...
 [advancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
 [advancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
 [advancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights
@@ -167,7 +193,7 @@ but appears in no chain. It also compares the installed folder with the package 
 hand-edited file, a folder left by an older release, or the copy inside a Docker image (where
 `.dockerignore` drops `**/.env`) all differ, and the line says so without blocking anything.
 
-### 4.6 What the installer changed
+### 4.7 What the installer changed
 
 - Copied the mod folder to `<EveJS root>/mods/AdvancedUtilityDrones`.
 - Added exactly one preload line (native: `NODE_OPTIONS` in `StartServer.bat`; Docker: the last
@@ -175,7 +201,7 @@ hand-edited file, a folder left by an older release, or the copy inside a Docker
 - Seeded `config/advancedUtilityDrones.json` and `config/advancedUtilityDrones.players.json`, and
   only if they were missing. On a run over an existing tree the server-wide file is also brought up to
   this release's key set: the keys that are missing are added and stamped with
-  `"configVersion": "1.0.0-alpha"`, no value in the file is edited, and the file is archived under
+  `"configVersion": "1.0.0"`, no value in the file is edited, and the file is archived under
   `_advancedutilitydrones-backup/` first. `--dry-run` prints what would be added, `--status` reports
   the shape it found.
 
@@ -500,12 +526,12 @@ one line per command, the line being what to type, with the detail lines indente
 
 ```text
 > !aud
-AdvancedUtilityDrones v1.0.0-alpha - pick the drones to control:
+AdvancedUtilityDrones v1.0.0 - pick the drones to control:
   /aud mining|mi [command] - the mining drones; "/aud mi help" lists the rest
   /aud salvage|sa [command] - the salvage drones; "/aud sa help" lists the rest
 
 > !aud help
-AdvancedUtilityDrones v1.0.0-alpha - pick the drones to control:
+AdvancedUtilityDrones v1.0.0 - pick the drones to control:
   /aud mining|mi [command] - the mining drones; "/aud mi help" lists the rest
   /aud salvage|sa [command] - the salvage drones; "/aud sa help" lists the rest
   /aud copy|cp <name|id> - take another character's whole setup onto you, both kinds
@@ -514,7 +540,7 @@ AdvancedUtilityDrones v1.0.0-alpha - pick the drones to control:
   /aud clear|cl - forget your personal settings and follow the server defaults
 
 > !aud mining help
-AdvancedUtilityDrones v1.0.0-alpha - the commands that follow /aud mining:
+AdvancedUtilityDrones v1.0.0 - the commands that follow /aud mining:
   /aud mining on|off - enable or disable automatic mining for your character
   /aud mining target spread|focus - one rock per drone, or every drone on the closest rock
   /aud mining range [<meters|ship>] - show the search radius, or set it
@@ -535,7 +561,7 @@ AdvancedUtilityDrones v1.0.0-alpha - the commands that follow /aud mining:
   "/aud help" lists the two commands that cover the whole character
 
 > !aud mining filter help
-AdvancedUtilityDrones v1.0.0-alpha - the commands that follow /aud mining filter:
+AdvancedUtilityDrones v1.0.0 - the commands that follow /aud mining filter:
   /aud mining filter add <name|id>[, <name|id> ...] - queue what to mine, first
       entry first; the comma separates entries, so a name may hold a space
       ("gneiss, dark ochre" is two); a bare number is a type ID, and a word
@@ -675,7 +701,7 @@ AdvancedUtilityDrones wrecks in range (120.0 km):
   3. Wreck (4003) 40.1 km - Another Pilot's
   work them with: "/aud salvage on"
 
-> !aud salvage d f
+> !aud salvage ds farthest
 AdvancedUtilityDrones salvage distance: farthest first.
 
 > !aud salvage on

@@ -662,6 +662,53 @@ function register(harness) {
     }
   });
 
+  test("installer: a run from inside mods/<id> keeps the installer it was run from", () => {
+    const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "advancedutilitydrones-"));
+    try {
+      const root = buildFixtureRoot(workdir);
+      const installed = path.join(root, "mods", MOD_ID);
+      // The README's own flow: the mod folder already sits in mods/<id> and the
+      // installer is run from inside it. The folder is then both the payload and
+      // the target, and the pass that strips installer/ out of an installed
+      // folder must not eat the installer the operator is holding - update.bat
+      // and uninstall.bat live in it.
+      fs.mkdirSync(path.dirname(installed), { recursive: true });
+      fs.cpSync(modDir, installed, {
+        recursive: true,
+        filter: (source) => ![".git", "node_modules"].includes(path.basename(source)),
+      });
+      const installer = path.join(installed, "installer", "install.js");
+      const install = spawnSync(process.execPath, [installer, "--server", root], { encoding: "utf8" });
+      assert.strictEqual(install.status, 0, `install failed:\n${install.stdout}\n${install.stderr}`);
+      assert.match(install.stdout, /already in place/u);
+      for (const script of ["install.js", "update.js", "uninstall.js", "status.bat"]) {
+        assert.ok(
+          fs.existsSync(path.join(installed, "installer", script)),
+          `${script} must survive a self-install`,
+        );
+      }
+      assert.ok(fs.existsSync(path.join(installed, "loader.js")), "the payload stays where it is");
+      assert.ok(
+        registerLib.hasEntrypointPreload(fs.readFileSync(path.join(root, "docker", "entrypoint.sh"), "utf8"), {
+          requirePath: containerPath,
+        }),
+        "the preload is still registered",
+      );
+
+      // The follow-up commands still run from the folder they were shipped in.
+      const status = spawnSync(process.execPath, [installer, "--status", "--server", root], { encoding: "utf8" });
+      assert.strictEqual(status.status, 0, `status failed:\n${status.stdout}\n${status.stderr}`);
+      const uninstall = spawnSync(
+        process.execPath,
+        [path.join(installed, "installer", "uninstall.js"), "--server", root],
+        { encoding: "utf8" },
+      );
+      assert.strictEqual(uninstall.status, 0, `uninstall failed:\n${uninstall.stdout}\n${uninstall.stderr}`);
+      assert.ok(!fs.existsSync(installed), "uninstall still retires the folder");
+    } finally {
+      fs.rmSync(workdir, { recursive: true, force: true });
+    }
+  });
   test("installer: the mod's configuration is seeded once and retired on uninstall", () => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "amd-config-"));
     try {
@@ -719,7 +766,7 @@ function register(harness) {
       assert.strictEqual(migrated.status, 0, migrated.stderr);
       assert.match(
         migrated.stdout,
-        /\[ OK \] config\/advancedUtilityDrones\.json: updated, v1\.2\.1 shape -> v1\.0\.0-alpha \(added /,
+        /\[ OK \] config\/advancedUtilityDrones\.json: updated, v1\.2\.1 shape -> v1\.0\.0 \(added /,
       );
       const config = JSON.parse(fs.readFileSync(serverConfig, "utf8"));
       assert.equal(config.targetMode, "focus", "the operator's own value is untouched");
@@ -728,7 +775,7 @@ function register(harness) {
         "the operator's own comment stays as it is");
       assert.equal(config.filterGrade, false, "a key this release added arrives with its default");
       assert.equal(config.allowPlayerCopy, true);
-      assert.equal(config.configVersion, "1.0.0-alpha");
+      assert.equal(config.configVersion, "1.0.0");
       assert.ok(
         fs.readdirSync(path.join(root, "_advancedutilitydrones-backup")).length >= 1,
         "the file is archived before it is updated",
@@ -739,7 +786,7 @@ function register(harness) {
       assert.strictEqual(settled.status, 0, settled.stderr);
       assert.match(
         settled.stdout,
-        /\[SKIP\] config\/advancedUtilityDrones\.json: already at the v1\.0\.0-alpha key set/,
+        /\[SKIP\] config\/advancedUtilityDrones\.json: already at the v1\.0\.0 key set/,
       );
 
       // --keep-config leaves both files behind.
@@ -815,7 +862,7 @@ function register(harness) {
       const config = JSON.parse(fs.readFileSync(serverConfig, "utf8"));
       assert.equal(config.targetMode, "focus", "the operator's own value travels with the file");
       assert.equal(config.rangeMeters, 30000);
-      assert.equal(config.configVersion, "1.0.0-alpha", "and it is then migrated like any other file");
+      assert.equal(config.configVersion, "1.0.0", "and it is then migrated like any other file");
       const players = JSON.parse(fs.readFileSync(playersConfig, "utf8"));
       assert.equal(
         players.characters["140000005"].enabled,
@@ -1160,7 +1207,7 @@ function register(harness) {
     const result = migration.migrate(old, { exampleText });
     assert.strictEqual(result.changed, true);
     assert.strictEqual(result.from, "1.2.1");
-    assert.strictEqual(result.version, "1.0.0-alpha");
+    assert.strictEqual(result.version, "1.0.0");
     assert.ok(result.added.includes("filterGrade"), "the grade switch is what 1.2.9 added");
     assert.ok(result.added.includes("allowPlayerCopy"));
     assert.ok(result.added.includes("chatTrigger"));
@@ -1169,7 +1216,7 @@ function register(harness) {
     assert.strictEqual(migrated.targetMode, "focus", "no value in the file is rewritten");
     assert.strictEqual(migrated.rangeMeters, 30000);
     assert.strictEqual(migrated._comment, "hand written", "the operator's own comment stays");
-    assert.strictEqual(migrated.configVersion, "1.0.0-alpha");
+    assert.strictEqual(migrated.configVersion, "1.0.0");
     assert.strictEqual(migrated.filterGrade, false, "a missing key arrives with its packaged default");
     assert.strictEqual(migrated.playersFile, "");
     assert.strictEqual(result.text.endsWith("\n"), true, "a trailing newline stays");
@@ -1189,7 +1236,7 @@ function register(harness) {
     // Running it a second time is a no-op: the keys are there and the stamp says so.
     const second = migration.migrate(result.text, { exampleText });
     assert.strictEqual(second.changed, false);
-    assert.strictEqual(second.version, "1.0.0-alpha");
+    assert.strictEqual(second.version, "1.0.0");
 
     // The line endings are the file's own choice and are kept.
     assert.strictEqual(
