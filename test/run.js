@@ -732,9 +732,9 @@ test("the chat overlay answers on /aud mining and toggles the player state", () 
     "the mod answers to one name now");
   assert.ok(!upstream.AVAILABLE_SLASH_COMMANDS.includes("advancedutilitydrones"),
     "the long spelling is gone");
-  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud mining"));
-  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud salvage"),
-    "the client's /help lists both menus");
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud mi [command]"));
+  assert.ok(upstream.COMMANDS_HELP_TEXT.includes("/aud sa [command]"),
+    "the client's /help lists both menus with short forms");
   const chatHub = {
     sendSystemMessage: (session, message) => sent.push(message),
   };
@@ -745,7 +745,7 @@ test("the chat overlay answers on /aud mining and toggles the player state", () 
   const untouched = upstream.executeChatCommand(world.session, "/help", chatHub, {});
   assert.deepEqual(untouched, { handled: false });
   const status = upstream.executeChatCommand(world.session, "/aud mining status", chatHub, {});
-  assert.match(status.message, /AdvancedUtilityDrones v/);
+  assert.match(status.message, /beta-AdvancedUtilityDrones v/);
 });
 
 test("the chat overlay answers on the dot prefix used by non-staff clients", () => {
@@ -955,7 +955,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     const chatRuntime = require(chatRuntimePath);
     assert.throws(
       () => chatRuntime.broadcastLocalMessage(world.session, "!aud target spread"),
-      (error) => /^AdvancedUtilityDrones/.test(error.message),
+      (error) => /^beta-AdvancedUtilityDrones/.test(error.message),
     );
     assert.equal(chatRuntime.calls.length, 0, "the trigger must never be broadcast");
     chatRuntime.broadcastLocalMessage(world.session, "hello belt");
@@ -1277,7 +1277,7 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // else. Throwing is the reply, not a failure.
   assert.throws(
     () => upstream.broadcastLocalMessage(world.session, "!aud mining target focus"),
-    (error) => /^AdvancedUtilityDrones/.test(error.message),
+    (error) => /^beta-AdvancedUtilityDrones/.test(error.message),
   );
   assert.equal(broadcast.length, 0, "the trigger must never be broadcast");
   assert.equal(runtime.getPlayerState(7).targetMode, "focus");
@@ -1286,12 +1286,12 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // nothing.
   assert.throws(
     () => upstream.broadcastLocalMessage(world.session, "!aud"),
-    (error) => /pick the drones to control/.test(error.message),
+    (error) => /beta-AdvancedUtilityDrones - \/aud/.test(error.message),
   );
   assert.equal(runtime.getPlayerState(7).targetMode, "focus");
 
   // "!amd" is not this mod's spelling any more: the abbreviation is claimed by
-  // other mods on a shared server, so the line has to reach the channel intact
+  // another mod may claim, so the line has to reach the channel intact
   // instead of being swallowed here.
   upstream.sendChannelMessage(world.session, "corp.1", "!amd on");
   assert.deepStrictEqual(broadcast, ["corp.1:!amd on"], "!amd is ordinary chat now");
@@ -1415,19 +1415,21 @@ test("the root takes two spellings and nothing shorter", () => {
 
   // "/aud" and "/aud h" are the two menus and nothing else.
   const root = run("/aud");
-  assert.match(root.message, /pick the drones to control/);
-  assert.match(root.message, /\/aud mining\|mi /);
-  assert.match(root.message, /\/aud salvage\|sa /);
-  assert.match(run("/aud h").message, /pick the drones to control/);
+  assert.match(root.message, /beta-AdvancedUtilityDrones - \/aud/);
+  assert.match(root.message, /\/aud mi \[command\]/);
+  assert.match(root.message, /\/aud sa \[command\]/);
+  assert.match(run("/aud h").message, /beta-AdvancedUtilityDrones - \/aud/);
 
   // Whole-character commands are not one kind's business: a bare "/aud" is the
   // two menus, and "/aud help" is where copy and clear are named.
-  assert.equal(root.message.includes("/aud copy"), false);
-  assert.equal(root.message.includes("/aud clear"), false);
+  assert.equal(root.message.includes("/aud cp"), false);
+  assert.equal(root.message.includes("/aud cl"), false);
   const rootHelp = run("/aud help").message;
-  assert.match(rootHelp, /\/aud copy\|cp <name\|id>/);
-  assert.match(rootHelp, /\/aud clear\|cl/);
-  assert.match(run("/aud h").message, /\/aud copy\|cp/);
+  assert.match(rootHelp, /\/aud cp <name\|id>/);
+  assert.match(rootHelp, /\/aud cp list \[name\]/);
+  assert.match(rootHelp, /\/aud cl/);
+  assert.match(rootHelp, /\/aud h/);
+  assert.match(run("/aud h").message, /\/aud cp/);
 
   // One letter, or half a word, is nothing: the answer points at the two
   // spellings instead of guessing one.
@@ -2210,7 +2212,7 @@ test("chat: the forms that left the grammar say what took their place", () => {
   assert.match(shown.message, /nothing is queued/);
   assert.match(shown.message, /fallback: any/);
   assert.match(shown.message, /grade {3}: off/);
-  assert.match(shown.message, /commands: "\/aud mining filter help"/);
+  assert.match(shown.message, /commands: "\/aud mi fl h"/);
 });
 
 test("chat: /aud mining help and /aud mining filter help are two lists", () => {
@@ -2219,42 +2221,41 @@ test("chat: /aud mining help and /aud mining filter help are two lists", () => {
   const runtime = createRuntime({ config, deps: world.deps });
   const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "mining " + line);
 
-  // The top-level list is the commands that follow "/aud mining" and nothing else: it
-  // points at the filter's own list instead of carrying it along.
   const top = run("help").message;
-  assert.match(top, /the commands that follow \/aud mining/);
-  assert.match(top, /\/aud mining filter help/);
-  assert.match(top, /mi fl, mi ls/, "the top-level list names the short spellings");
-  assert.equal(top.includes("filter add"), false,
-    "the filter's own commands no longer pad the top-level list");
-  assert.equal(top.includes("filter grade"), false);
-  assert.equal(top.includes("/aud copy"), false,
-    "copy covers a whole character and is listed at the root, not here");
-  assert.match(top, /\/aud mining target spread\|focus/);
+  assert.deepEqual(top.split("\n"), [
+    "beta-AdvancedUtilityDrones - /aud mi",
+    "  /aud mi on|off",
+    "  /aud mi tg spread|focus",
+    "  /aud mi rg [<meters|ship>]",
+    "  /aud mi th <m3>",
+    "  /aud mi fl [command]",
+    "  /aud mi ls [ore|ice|moon]",
+    "  /aud mi ct hold|recall|off",
+    "  /aud mi rs",
+    "  /aud mi cl",
+    "  /aud mi st",
+    "  /aud mi h",
+  ], "the mining help is command syntax only, with short forms in every example");
+  assert.equal(top.includes("/aud mining"), false);
   assert.match(chatCommand.handleCommand(runtime, config, world.session, "mining spread").message,
     /is a targeting mode, not a command/);
 
-  // "/aud mining filter help" carries them in the same shape as the list above: one
-  // line per command, the line is what to type, and the detail lines sit under
-  // it indented by four spaces - no paragraphs.
   const filterHelp = run("filter help").message;
-  assert.match(filterHelp, /the commands that follow \/aud mining filter/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter add <name\|id>/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter move <name\|id> <place>/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter del <name\|id>/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter clear ore\|ice\|moon/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter grade on\|off/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter fallback any\|idle/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter - show the queue/);
-  assert.match(filterHelp, /\n {2}\/aud mining filter help - this list/);
-  assert.match(filterHelp, /\n {2}The short forms are two letters each: filter is fl/);
+  assert.deepEqual(filterHelp.split("\n"), [
+    "beta-AdvancedUtilityDrones - /aud mi fl",
+    "  /aud mi fl ad <name|id>[, ...]",
+    "  /aud mi fl mv <name|id> [place]",
+    "  /aud mi fl dl <name|id>",
+    "  /aud mi fl cl ore|ice|moon",
+    "  /aud mi fl gd on|off",
+    "  /aud mi fl fb any|idle",
+    "  /aud mi fl",
+    "  /aud mi fl h",
+  ], "the filter help is the same compact command list");
   const widest = filterHelp.split("\n").reduce((most, line) => Math.max(most, line.length), 0);
-  assert.ok(widest <= 84, "the filter list stays as narrow as the top-level one (" + widest + ")");
-  assert.equal(filterHelp.includes("first entry mined first:"), false,
-    "the paragraph under \"add\" is gone");
+  assert.ok(widest <= 52, "the filter list stays narrow (" + widest + ")");
 
-  // Reading the queue still says where the list of commands is.
-  assert.match(run("filter").message, /\/aud mining filter help/);
+  assert.match(run("filter").message, /\/aud mi fl h/);
 });
 
 test("chat: fl is the filter's short spelling, and one letter is not", () => {
@@ -2561,12 +2562,12 @@ test("chat: the kind comes first, and the retired spellings only say so", () => 
   // verb typed without one is answered with both spellings of itself.
   assert.equal(chatCommand.matchCommand("/aud", config), "");
   const menu = chatCommand.handleCommand(runtime, config, world.session, "");
-  assert.match(menu.message, /pick the drones to control/);
-  assert.match(menu.message, /\/aud mining\|mi \[command\]/);
-  assert.match(menu.message, /\/aud salvage\|sa \[command\]/);
+  assert.match(menu.message, /beta-AdvancedUtilityDrones - \/aud/);
+  assert.match(menu.message, /\/aud mi \[command\]/);
+  assert.match(menu.message, /\/aud sa \[command\]/);
   const ambiguous = chatCommand.handleCommand(runtime, config, world.session, "spread");
-  assert.match(ambiguous.message, /\/aud mi spread\" for the mining drones/);
-  assert.match(ambiguous.message, /\/aud sa spread\" for the salvage drones/);
+  assert.match(ambiguous.message, /\/aud mi spread\"/);
+  assert.match(ambiguous.message, /\/aud sa spread\"/);
   assert.equal(runtime.getPlayerState(7).targetMode, "spread",
     "a verb with no kind changes nothing");
 
@@ -3018,9 +3019,21 @@ test("chat: the salvage menu is its own set of switches", () => {
   const runtime = createRuntime({ config, deps: world.deps });
   const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "salvage " + line);
 
-  assert.match(run("help").message, /the commands that follow \/aud salvage/);
-  assert.match(run("help").message, /\/aud salvage distance nearest\|farthest/);
-  assert.match(run("status").message, /AdvancedUtilityDrones v.* salvage/);
+  assert.deepEqual(run("help").message.split("\n"), [
+    "beta-AdvancedUtilityDrones - /aud sa",
+    "  /aud sa on|off",
+    "  /aud sa tg spread|focus",
+    "  /aud sa ds nearest|farthest",
+    "  /aud sa ls",
+    "  /aud sa rg [<meters|ship>]",
+    "  /aud sa th <m3>",
+    "  /aud sa ct hold|recall|off",
+    "  /aud sa rs",
+    "  /aud sa cl",
+    "  /aud sa st",
+    "  /aud sa h",
+  ], "the salvage help is short syntax only");
+  assert.match(run("status").message, /beta-AdvancedUtilityDrones v.* salvage/);
   assert.match(run("status").message, /wrecks\s+: 1 in range/);
   assert.match(run("status").message, /cargo hold/);
   assert.match(run("list").message, /wrecks in range/);
@@ -3052,7 +3065,7 @@ test("chat: the salvage menu is its own set of switches", () => {
   assert.match(run("tg spread").message, /salvage targeting mode: SPREAD/);
   assert.match(run("sp").message, /unknown option "sp"/);
   assert.match(run("fo").message, /unknown option "fo"/);
-  assert.match(run("st").message, /AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("st").message, /beta-AdvancedUtilityDrones v.* salvage/);
   assert.match(run("d").message, /unknown option "d"/);
   assert.match(run("o").message, /unknown option "o"/);
   assert.match(run("bogus").message, /unknown option "bogus"/);
@@ -3128,6 +3141,122 @@ test("players: a 1.3.0 flat entry is read as the mining kind", () => {
 // The installer suite ships beside the mod in the development tree and in the
 // installer package; a mod folder copied straight into mods/ has neither.
 require("./installer.js")({ test, modDir });
+
+test("salvage: spread blocks a claimed wreck even when the claim penalty is zero", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(2),
+    wrecks: [makeWreck(4001, 5000, 7), makeWreck(4002, 5001, 7)],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ salvageTargetMode: "spread", claimPenaltyMeters: 0 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001, 4002],
+    "spread must exclude a claimed wreck while an unclaimed wreck is usable");
+});
+
+test("salvage: an active automated wreck is claimed before an idle drone chooses", () => {
+  const drones = salvageSquad(2);
+  drones[0].droneCommand = "SALVAGE";
+  drones[0].activityState = 2;
+  drones[0].targetID = 4001;
+  drones[0].droneSalvage = { targetID: 4001 };
+  drones[0].advancedUtilityDronesSalvageTargetID = 4001;
+  const world = makeWorld({
+    rocks: [],
+    drones,
+    wrecks: [makeWreck(4001, 5000, 7), makeWreck(4002, 9000, 7)],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ salvageTargetMode: "spread", claimPenaltyMeters: 0 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4002],
+    "the idle drone must not join a wreck the automation is already working");
+});
+
+test("salvage: more drones than wrecks spills only after every wreck is claimed", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(3),
+    wrecks: [makeWreck(4001, 5000, 7), makeWreck(4002, 9000, 7)],
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ salvageTargetMode: "spread", claimPenaltyMeters: 0 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001, 4002, 4001],
+    "the third drone spills only after both wrecks are taken");
+});
+
+test("salvage: farthest is restored after the client picks a replacement wreck", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 30000, 7)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.setPlayerSalvageDistance(7, "farthest");
+  runtime.onSceneTick(world.scene, 1000);
+
+  const drone = world.drones[0];
+  drone.droneCommand = "SALVAGE";
+  drone.activityState = 2;
+  drone.targetID = 4001;
+  drone.droneSalvage = { targetID: 4001 };
+  runtime.onSceneTick(world.scene, 2000);
+
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4002, 4002],
+    "the nearest vanilla replacement is corrected back to the configured far end");
+  assert.equal(drone.advancedUtilityDronesSalvageTargetID, 4002);
+});
+
+test("salvage: changing farthest retasks a drone that is already working", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 30000, 7)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+
+  const drone = world.drones[0];
+  drone.droneCommand = "SALVAGE";
+  drone.activityState = 2;
+  drone.targetID = 4001;
+  drone.droneSalvage = { targetID: 4001 };
+  runtime.setPlayerSalvageDistance(7, "farthest");
+  runtime.onSceneTick(world.scene, 2000);
+
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001, 4002],
+    "a distance change must reach an already-working salvage drone");
+});
+
+test("salvage: a manual takeover is not retasked by a distance change", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 9000, 7), makeWreck(4002, 30000, 7)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+
+  const drone = world.drones[0];
+  drone.droneCommand = "SALVAGE";
+  drone.activityState = 2;
+  drone.targetID = 4001;
+  drone.droneSalvage = { targetID: 4001 };
+  runtime.notePlayerCommand("commandSalvage", world.session, [drone.itemID]);
+  runtime.setPlayerSalvageDistance(7, "farthest");
+  runtime.onSceneTick(world.scene, 2000);
+
+  assert.deepEqual(world.calls.salvage.map((call) => call.targetID), [4001],
+    "the automation must leave a manually flown drone alone");
+});
 
 let failures = 0;
 for (const entry of tests) {

@@ -1,7 +1,7 @@
 {
   "_comment": "Copy to <EveJS root>/config/advancedUtilityDrones.json - the installer creates it for you, and never overwrites it afterwards. Under Docker that directory is bind-mounted, so a change needs a container restart, never an image rebuild. Keys are the env var names from .env.example without the EVEJS_ADVANCED_UTILITY_DRONES_ prefix, and both spellings are accepted. The full list lives in config.js KEYS. Per-character choices are NOT here: they live in config/advancedUtilityDrones.players.json, which /aud writes and the loader reads back on every restart. configVersion is the installer's own stamp: it names the release whose key set this file was brought up to, and an install or update adds the keys a later release introduced - it never changes a value that is already here.",
 
-  "configVersion": "1.0.0",
+  "configVersion": "1.0.2-beta.1",
 
   "enabled": true,
   "verbose": false,

@@ -1,12 +1,73 @@
 # Changelog
 
-Advanced Utility Drones for EveJS 0.12.8. Newest release first.
+Advanced Utility Drones. The EveJS 0.12.9 Beta port is kept beside the stable 0.12.8 line; the stable
+release history remains below unchanged.
 
-Every release is a drop-in replacement for the one before it: run `update.bat` over an existing
-install, or copy the `AdvancedUtilityDrones/` folder over the one in `mods/`. Nothing outside that
-folder is edited, no player installs anything, and every value you have set stays exactly as it is: the installer
-only adds the keys a later release introduced, and stamps the file with the release it was brought up
-to. A server keeps its settings and every player keeps their saved choices.
+Every release is a drop-in replacement for the one before it within the same line: run `update.bat`
+over an existing install, or copy the `beta-AdvancedUtilityDrones/` folder over the one in `mods/`.
+Nothing outside that folder is edited, no player installs anything, and every value you have set
+stays exactly as it is: the installer only adds the keys a later release introduced, and stamps the
+file with the release it was brought up to. A server keeps its settings and every player keeps their
+saved choices.
+
+## 1.0.2-beta.1 - 2026-09-23
+
+### Fixed
+
+- **Salvage `spread` now reserves active wrecks instead of merely penalising them.** The old
+  implementation added `claimPenaltyMeters` to a claimed wreck's distance score, so a small or zero
+  penalty could still send several automated drones to the same wreck. Spread now excludes claimed
+  wrecks while any unclaimed wreck is available, counts wrecks already being worked by automated
+  drones as claims, and permits sharing only after every wreck is taken.
+- **`farthest` survives the client's own automatic retargeting.** EveJS 0.12.9 may replace an
+  exhausted salvage target before the mod's next scan. The mod now detects that replacement and
+  returns the drone to the configured far end of the field. Changing `target` or `distance` also
+  retasks automated drones that are already working, while a manually controlled drone is left
+  alone.
+
+### Changed
+
+- **The in-game help is command syntax only.** It no longer repeats descriptions for commands whose
+  names already say what they do, and every in-game example uses the two-letter spelling.
+- **`COMMANDS_HELP_TEXT` adds only the root menu.** `/help` no longer expands both complete kind
+  menus into the client command list.
+- **`MANUAL.md` is now a command reference.** It lists the commands, accepted values and full
+  spellings, and states that salvage `list` is informational rather than a targeting-order control.
+
+### Verification
+
+- The development suite passes **116/116**.
+- The installed Beta payload suite passes **89/89** inside the 0.12.9 container.
+
+---
+
+## 1.0.1-beta.1 - 2026-09-23
+
+**EveJS 0.12.9 Beta port. The gameplay implementation is unchanged from Advanced Utility Drones
+1.0.0.**
+
+### Added
+
+- **A side-by-side Beta package.** The install folder, mod id, API symbols, install marker, log prefix
+  and backup root use the `beta-AdvancedUtilityDrones` /
+  `_beta-advancedutilitydrones-backup` identity, so this build can be installed next to the stable
+  0.12.8 release without overwriting it.
+- **EveJS 0.12.9 compatibility metadata.** `evejs-launcher.mod.json` declares `0.12.9`, and the
+  installation guidance and loader diagnostics now target 0.12.9.
+
+### Changed
+
+- Configuration filenames and environment variables stay `advancedUtilityDrones.json`,
+  `advancedUtilityDrones.players.json` and `EVEJS_ADVANCED_UTILITY_DRONES_*`, so existing settings
+  and per-character choices keep working.
+- The loader still wraps the exported `droneRuntime.tickScene`,
+  `chatCommands.executeChatCommand` and the two chat runtime broadcast functions in memory. No
+  EveJS source file is rewritten.
+
+### Verification
+
+- The development suite passes **110/110** against the 0.12.9 Beta tree, and the installed payload
+  suite passes **83/83** inside the Beta deployment.
 
 ---
 
@@ -274,7 +335,7 @@ AdvancedUtilityDrones filter grade: on (the richest grade of a rock in range is 
 ## 1.2.8 - 2026-09-19
 
 **Changed: the command has exactly four spellings.** `/advancedutilitydrones` was long enough that
-nobody typed it, and `!amd` is an abbreviation another mod on a shared server may want for itself.
+nobody typed it, and `!amd` is an abbreviation another mod may want for itself.
 Both were removed. `/atm` and `/altmining` are the slash forms, `!atm` and `!altmining` the
 plain-chat ones, and a line that spells anything else is left alone.
 
