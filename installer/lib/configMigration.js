@@ -29,7 +29,7 @@
  */
 
 // The release this module brings a file up to. Bump it with the mod version.
-const CURRENT_VERSION = "1.0.2-beta.1";
+const CURRENT_VERSION = "1.0.3-beta.1";
 
 // Which release added which setting, oldest first. Append only: a key that was
 // already in the 1.2.1 file is never listed, and a release that only changed
@@ -53,6 +53,7 @@ const RELEASES = Object.freeze([
     ]),
   }),
   Object.freeze({ version: "1.0.2-beta.1", added: Object.freeze([]) }),
+  Object.freeze({ version: "1.0.3-beta.1", added: Object.freeze([]) }),
 ]);
 
 // The release the shape of a file falls back to when even the first entry above

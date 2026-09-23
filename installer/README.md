@@ -1,4 +1,4 @@
-# Advanced Utility Drones v1.0.2-beta.1 - Installer
+# Advanced Utility Drones v1.0.3-beta.1 - Installer
 
 Gives mining drones the auto-targeting every other drone in the game has: a launched drone finds the
 closest ore or ice inside the ship's drone control range and starts mining, and the squadron recalls
@@ -100,7 +100,7 @@ Native : restart the server with StartServer.bat
 Then look for these lines in the server log:
 
 ```text
-[beta-AdvancedUtilityDrones] v1.0.2-beta.1 loader ready ...
+[beta-AdvancedUtilityDrones] v1.0.3-beta.1 loader ready ...
 [beta-AdvancedUtilityDrones] drone tick hook installed ...
 [beta-AdvancedUtilityDrones] plain-chat trigger installed ...
 ```

@@ -228,16 +228,31 @@ function makeWorld(options = {}) {
         kind: "ship",
         ownerID: options.secondShip.characterID,
         characterID: options.secondShip.characterID,
-        position: { x: 0, y: 0, z: 0 },
+        position: options.secondShip.position || { x: 0, y: 0, z: 0 },
         radius: 500,
         mode: "STOP",
         warpState: null,
       }
     : null;
+  const extraShips = (options.extraShips || []).map((ship) => ({
+    itemID: ship.itemID,
+    typeID: 28352,
+    categoryID: 6,
+    kind: "ship",
+    ownerID: ship.characterID,
+    characterID: ship.characterID,
+    position: ship.position || { x: 0, y: 0, z: 0 },
+    radius: 500,
+    mode: "STOP",
+    warpState: null,
+  }));
   const entities = new Map();
   entities.set(shipEntity.itemID, shipEntity);
   if (secondShip) {
     entities.set(secondShip.itemID, secondShip);
+  }
+  for (const ship of extraShips) {
+    entities.set(ship.itemID, ship);
   }
   for (const drone of drones) {
     entities.set(drone.itemID, drone);
@@ -254,6 +269,12 @@ function makeWorld(options = {}) {
   if (staleRock) {
     entities.set(staleRock.entity.itemID, staleRock.entity);
   }
+  // Declared before the scene so its visible-entity probe can count the
+  // expensive salvage scan in coordination tests.
+  const calls = {
+    mine: [], returnBay: [], salvage: [], warnings: [], fleetLookups: [], visibleScans: 0,
+  };
+
   const scene = {
     systemID: 30000142,
     dynamicEntities: new Map(drones.map((drone) => [drone.itemID, drone])),
@@ -265,6 +286,15 @@ function makeWorld(options = {}) {
       ...wrecks,
     ],
     getEntityByID: (entityID) => entities.get(Number(entityID)) || null,
+    getAllVisibleEntities() {
+      calls.visibleScans += 1;
+      return [
+        ...(Array.isArray(this.staticEntities) ? this.staticEntities : []),
+        ...(this.dynamicEntities instanceof Map
+          ? [...this.dynamicEntities.values()]
+          : []),
+      ];
+    },
   };
   const byEntityID = new Map(rocks.map((rock) => [rock.entity.itemID, rock.state]));
   const miningState = {
@@ -291,11 +321,15 @@ function makeWorld(options = {}) {
     },
   };
 
-  const calls = { mine: [], returnBay: [], salvage: [], warnings: [] };
+  // `calls` lives above the scene; see the visible-entity probe there.
   const shipItem = { itemID: 1000, typeID: 28352 };
   const secondShipItem = secondShip
     ? { itemID: secondShip.itemID, typeID: 28352 }
     : null;
+  const extraShipItems = new Map(extraShips.map((ship) => [
+    ship.itemID,
+    { itemID: ship.itemID, typeID: 28352 },
+  ]));
   const holdCapacityByFlag = {
     [ORE_HOLD_FLAG]: options.oreHoldCapacity ?? 1000,
     [GENERAL_MINING_HOLD_FLAG]: options.generalMiningHoldCapacity ?? 0,
@@ -318,6 +352,10 @@ function makeWorld(options = {}) {
   const secondSession = secondShip
     ? { characterID: secondShip.characterID, _space: { systemID: 30000142 } }
     : null;
+  const extraSessions = new Map(extraShips.map((ship) => [
+    ship.characterID,
+    { characterID: ship.characterID, _space: { systemID: 30000142 } },
+  ]));
 
   const deps = {
     getDroneRuntime: () => ({
@@ -355,6 +393,9 @@ function makeWorld(options = {}) {
         resolveRuntimeSceneForSession: (_space, activeSession) => {
           const characterID = Number(activeSession && activeSession.characterID);
           if (characterID === 7) {
+            return scene;
+          }
+          if (extraSessions.has(characterID)) {
             return scene;
           }
           return secondShip && characterID === secondShip.characterID ? scene : null;
@@ -434,11 +475,31 @@ function makeWorld(options = {}) {
         if (id === 7) {
           return session;
         }
+        if (extraSessions.has(id)) {
+          return extraSessions.get(id);
+        }
         return secondShip && id === secondShip.characterID ? secondSession : null;
       },
     }),
+    getFleetRuntime: () => ({
+      getFleetForCharacter: (characterID) => {
+        const id = Number(characterID);
+        calls.fleetLookups.push(id);
+        const fleetID = Number(options.fleetByCharacter && options.fleetByCharacter[id]);
+        return Number.isFinite(fleetID) && fleetID > 0 ? { fleetID } : null;
+      },
+    }),
     getCharacterState: () => ({
-      getActiveShipRecord: () => shipItem,
+      getActiveShipRecord: (characterID) => {
+        const id = Number(characterID);
+        if (id === 7) {
+          return shipItem;
+        }
+        if (secondShip && id === secondShip.characterID) {
+          return secondShipItem;
+        }
+        return extraShipItems.get(id) || null;
+      },
     }),
     getSpaceRuntime: () => ({}),
     getSimulationInventoryProjection: () => ({
@@ -446,9 +507,10 @@ function makeWorld(options = {}) {
         if (Number(itemID) === 1000) {
           return shipItem;
         }
-        return secondShipItem && Number(itemID) === secondShipItem.itemID
-          ? secondShipItem
-          : null;
+        if (secondShipItem && Number(itemID) === secondShipItem.itemID) {
+          return secondShipItem;
+        }
+        return extraShipItems.get(Number(itemID)) || null;
       },
       listContainerItems: () => containerItems,
     }),
@@ -2915,6 +2977,132 @@ test("salvage: a hull that launches fifty drones puts every one of them to work"
   assert.deepEqual([...new Set(focus.calls.salvage.map((call) => call.targetID))], [4001]);
 });
 
+test("mining: a fleet shares its rock claims, while separate pilots stay independent", () => {
+  const buildWorld = (fleetByCharacter) => makeWorld({
+    drones: [
+      makeDrone({ itemID: 2001, typeID: ORE_DRONE_TYPE, controllerID: 1000 }),
+      makeDrone({ itemID: 2101, typeID: ORE_DRONE_TYPE, controllerID: 1001 }),
+    ],
+    rocks: [
+      makeRock(3001, "ore", 1230, 10000),
+      makeRock(3002, "ore", 1230, 11000),
+    ],
+    secondShip: { itemID: 1001, characterID: 8 },
+    fleetByCharacter,
+  });
+
+  const fleet = buildWorld({ 7: 77, 8: 77 });
+  const fleetRuntime = createRuntime({ config: makeConfig(), deps: fleet.deps });
+  fleetRuntime.onSceneTick(fleet.scene, 1000);
+  assert.deepEqual(
+    fleet.calls.mine.map((call) => call.targetID),
+    [3001, 3002],
+    "one fleet ledger makes the second drone take the next rock",
+  );
+
+  const separate = buildWorld({ 7: 77, 8: 88 });
+  const separateRuntime = createRuntime({ config: makeConfig(), deps: separate.deps });
+  separateRuntime.onSceneTick(separate.scene, 1000);
+  assert.deepEqual(
+    separate.calls.mine.map((call) => call.targetID),
+    [3001, 3001],
+    "different fleets keep their own ledgers",
+  );
+
+  const solo = buildWorld(null);
+  const soloRuntime = createRuntime({ config: makeConfig(), deps: solo.deps });
+  soloRuntime.onSceneTick(solo.scene, 1000);
+  assert.deepEqual(
+    solo.calls.mine.map((call) => call.targetID),
+    [3001, 3001],
+    "members without a fleet are independent too",
+  );
+});
+
+test("mining: a fleet seeds a member's active rock before an idle drone chooses", () => {
+  const buildWorld = (fleetByCharacter) => {
+    const active = makeDrone({
+      itemID: 2001,
+      typeID: ORE_DRONE_TYPE,
+      controllerID: 1000,
+      droneCommand: "MINE",
+      activityState: 2,
+    });
+    active.droneMining = { targetID: 3001 };
+    active.targetID = 3001;
+    return makeWorld({
+      drones: [
+        active,
+        makeDrone({ itemID: 2101, typeID: ORE_DRONE_TYPE, controllerID: 1001 }),
+      ],
+      rocks: [
+        makeRock(3001, "ore", 1230, 10000),
+        makeRock(3002, "ore", 1230, 11000),
+      ],
+      secondShip: { itemID: 1001, characterID: 8 },
+      fleetByCharacter,
+    });
+  };
+
+  const fleet = buildWorld({ 7: 77, 8: 77 });
+  const fleetRuntime = createRuntime({ config: makeConfig(), deps: fleet.deps });
+  fleetRuntime.onSceneTick(fleet.scene, 1000);
+  assert.deepEqual(
+    fleet.calls.mine.map((call) => call.targetID),
+    [3002],
+    "the active rock is already claimed inside the fleet",
+  );
+
+  const separate = buildWorld({ 7: 77, 8: 88 });
+  const separateRuntime = createRuntime({ config: makeConfig(), deps: separate.deps });
+  separateRuntime.onSceneTick(separate.scene, 1000);
+  assert.deepEqual(
+    separate.calls.mine.map((call) => call.targetID),
+    [3001],
+    "another fleet does not inherit that claim",
+  );
+});
+
+test("mining: a ten-ship fleet spreads across fifty rocks when the belt is rich", () => {
+  const extraShips = [];
+  const fleetByCharacter = { 7: 77, 8: 77 };
+  for (let shipIndex = 2; shipIndex < 10; shipIndex += 1) {
+    const characterID = 7 + shipIndex;
+    extraShips.push({ itemID: 1000 + shipIndex, characterID });
+    fleetByCharacter[characterID] = 77;
+  }
+
+  const drones = [];
+  for (let shipIndex = 0; shipIndex < 10; shipIndex += 1) {
+    for (let droneIndex = 0; droneIndex < 5; droneIndex += 1) {
+      drones.push(makeDrone({
+        itemID: 2001 + (shipIndex * 100) + droneIndex,
+        typeID: ORE_DRONE_TYPE,
+        controllerID: 1000 + shipIndex,
+      }));
+    }
+  }
+
+  const rocks = [];
+  for (let index = 0; index < 50; index += 1) {
+    rocks.push(makeRock(3001 + index, "ore", 1230, 10000 + (index * 1000)));
+  }
+  const world = makeWorld({
+    drones,
+    rocks,
+    secondShip: { itemID: 1001, characterID: 8 },
+    extraShips,
+    fleetByCharacter,
+  });
+  const runtime = createRuntime({
+    config: makeConfig({ claimPenaltyMeters: 100000, maxCandidates: 64 }),
+    deps: world.deps,
+  });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.mine.length, 50, "every idle drone is assigned");
+  assert.equal(new Set(world.calls.mine.map((call) => call.targetID)).size, 50,
+    "fifty rocks and one fleet ledger mean no two drones share a rock");
+});
 test("mining: a hull that launches fifty drones puts every one of them to work", () => {
   const drones = [];
   for (let index = 0; index < 50; index += 1) {
@@ -2957,7 +3145,103 @@ test("salvage: two hulls sharing a field do not count a wreck against each other
   const secondHull = world.calls.salvage[3];
   assert.deepEqual(secondHull.droneIDs, [2101]);
   assert.equal(secondHull.targetID, 4001,
-    "the second hull's drone goes to the nearest wreck: one claim map per hull");
+    "the second hull's drone goes to the nearest wreck: separate claim maps per hull");
+});
+
+test("salvage: one fleet shares a wreck scan and its claim ledger", () => {
+  const buildWorld = (fleetByCharacter) => makeWorld({
+    rocks: [],
+    drones: [
+      makeDrone({ itemID: 2001, typeID: SALVAGE_DRONE_TYPE, controllerID: 1000 }),
+      makeDrone({ itemID: 2101, typeID: SALVAGE_DRONE_TYPE, controllerID: 1001 }),
+    ],
+    wrecks: [makeWreck(4001, 10000, 7), makeWreck(4002, 11000, 7)],
+    secondShip: { itemID: 1001, characterID: 8 },
+    fleetByCharacter,
+  });
+
+  const fleet = buildWorld({ 7: 77, 8: 77 });
+  const fleetRuntime = createRuntime({ config: makeConfig(), deps: fleet.deps });
+  fleetRuntime.onSceneTick(fleet.scene, 1000);
+  assert.deepEqual(
+    fleet.calls.salvage.map((call) => call.targetID),
+    [4001, 4002],
+    "one fleet ledger gives the second ship the next wreck",
+  );
+  assert.equal(fleet.calls.visibleScans, 1, "both ships share one scene scan");
+
+  const separate = buildWorld({ 7: 77, 8: 88 });
+  const separateRuntime = createRuntime({ config: makeConfig(), deps: separate.deps });
+  separateRuntime.onSceneTick(separate.scene, 1000);
+  assert.deepEqual(
+    separate.calls.salvage.map((call) => call.targetID),
+    [4001, 4001],
+    "separate fleets keep separate ledgers",
+  );
+  assert.equal(separate.calls.visibleScans, 2, "each separate fleet scans for itself");
+});
+
+test("salvage: a ten-ship fleet still scans once per pass", () => {
+  const extraShips = [];
+  const fleetByCharacter = { 7: 77, 8: 77 };
+  for (let shipIndex = 2; shipIndex < 10; shipIndex += 1) {
+    const characterID = 7 + shipIndex;
+    extraShips.push({ itemID: 1000 + shipIndex, characterID });
+    fleetByCharacter[characterID] = 77;
+  }
+
+  const drones = [];
+  for (let shipIndex = 0; shipIndex < 10; shipIndex += 1) {
+    for (let droneIndex = 0; droneIndex < 5; droneIndex += 1) {
+      drones.push(makeDrone({
+        itemID: 2001 + (shipIndex * 100) + droneIndex,
+        typeID: SALVAGE_DRONE_TYPE,
+        controllerID: 1000 + shipIndex,
+      }));
+    }
+  }
+
+  const wrecks = [];
+  for (let index = 0; index < 50; index += 1) {
+    wrecks.push(makeWreck(4001 + index, 10000 + (index * 1000), 7));
+  }
+  const world = makeWorld({
+    rocks: [],
+    drones,
+    wrecks,
+    secondShip: { itemID: 1001, characterID: 8 },
+    extraShips,
+    fleetByCharacter,
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.salvage.length, 50, "every idle drone is assigned");
+  assert.equal(world.calls.visibleScans, 1, "all ten ships share one scan");
+  assert.equal(new Set(world.calls.salvage.map((call) => call.targetID)).size, 50,
+    "spread mode uses fifty distinct wrecks when fifty are available");
+});
+
+test("salvage: a squadron already working does not scan the scene again", () => {
+  const world = makeWorld({
+    rocks: [],
+    drones: salvageSquad(1),
+    wrecks: [makeWreck(4001, 10000, 7)],
+  });
+  const runtime = createRuntime({ config: makeConfig(), deps: world.deps });
+  runtime.onSceneTick(world.scene, 1000);
+  assert.equal(world.calls.salvage.length, 1, "the first pass assigns the idle drone");
+  assert.equal(world.calls.visibleScans, 1, "the first assignment needs one scene scan");
+
+  const drone = world.drones[0];
+  drone.droneCommand = "SALVAGE";
+  drone.activityState = 2;
+  drone.targetID = 4001;
+  drone.droneSalvage = { targetID: 4001 };
+
+  runtime.onSceneTick(world.scene, 2000);
+  runtime.onSceneTick(world.scene, 3000);
+  assert.equal(world.calls.salvage.length, 1, "a valid standing order is left alone");
+  assert.equal(world.calls.visibleScans, 1, "stable work never asks for visible entities");
 });
 
 test("drones: a third-party hull's drones are flown by their effect, not their name", () => {

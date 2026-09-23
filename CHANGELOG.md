@@ -10,6 +10,33 @@ stays exactly as it is: the installer only adds the keys a later release introdu
 file with the release it was brought up to. A server keeps its settings and every player keeps their
 saved choices.
 
+## 1.0.3-beta.1 - 2026-09-23
+
+### Changed
+
+- **Drone coordination now follows fleet membership.** Mining and salvage claim ledgers are shared by
+  every ship in the same fleet, so one pilot's active rock or wreck is visible to the others before
+  an idle drone picks a target. Pilots in different fleets, and pilots without a fleet, keep separate
+  ledgers and behave exactly as before.
+- **A fleet scans its salvage field once per pass.** The raw wreck list is resolved once for a fleet,
+  then reused by each ship with distances measured from that ship's own position. The per-drone full
+  candidate sort was replaced by a distance cursor, so every drone walks the ordered list instead of
+  rebuilding it.
+- **A working salvage squadron skips the expensive scene scan.** When every automated salvage drone
+  has a valid standing target and no setting changed, the pass returns without calling
+  `getAllVisibleEntities()`. The scene is scanned again only when an idle, invalid or newly retargeted
+  drone actually needs a candidate.
+- **Fleet membership is resolved per scene pass.** Joining, leaving or changing fleets takes effect on
+  the next pass without a persistent cache to invalidate.
+
+### Verification
+
+- The development suite passes **122/122**, including same-fleet versus separate-fleet claim tests,
+  a ten-ship / fifty-drone mining run over a rich belt, a ten-ship salvage scan that happens once per
+  pass, and the stable-work scan fast path.
+
+---
+
 ## 1.0.2-beta.1 - 2026-09-23
 
 ### Fixed

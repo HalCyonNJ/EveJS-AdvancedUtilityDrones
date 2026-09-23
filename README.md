@@ -46,16 +46,19 @@ Launch salvage drones over a wreck field and each one picks a wreck of its own:
 - 🧭 `/aud salvage target spread` gives every drone its own wreck, `/aud salvage target focus` puts the whole squadron on one,
 - 🔒 a wreck belongs to somebody, but stripping a hull is not what carries a flag in this game - taking the loot is - so the squadron works any wreck in range,
 - 📦 salvage material goes into the cargo hold - no hull here has a hold that receives it anywhere else - so that is the hold the rule watches,
-- 🖱️ a drone ordered by hand is left alone, exactly like a miner.
+- 🖱️ a drone ordered by hand is left alone, exactly like a miner,
+- 🛰️ ships in the same fleet share one claim ledger and one wreck scan per pass, while separate fleets
+  and solo pilots remain independent.
 
 Both kinds fly by what a drone *is*, not by what it is called: a hull that launches fifty drones
-puts all fifty to work, not the handful whose names happened to be on a fixed list.
+puts all fifty to work, not the handful whose names happened to be on a fixed list. Mining claims work
+the same way: same-fleet miners see each other's active rocks before an idle drone chooses.
 
 The defaults are sensible: mining on, spread, follow the ship, recall on full hold, recall when shot,
-grade off, and nothing queued - the closest rock still gets mined. Salvage is on as well, spread,
-nearest wreck first, your own wrecks only - the one setting that has to be *asked for* is working
-somebody else's wreck. Settings live in `config/advancedUtilityDrones.json` (every key is documented
-in `config.example.json`), and every environment variable is in `.env.example`.
+grade off, and nothing queued - the closest rock still gets mined. Salvage is on as well, spread and
+nearest wreck first, and every wreck in range is workable. Settings live in
+`config/advancedUtilityDrones.json` (every key is documented in `config.example.json`), and every
+environment variable is in `.env.example`.
 
 Everything in this repository - `README.md`, `MANUAL.md`, `HOW-IT-WORKS.md` and `CHANGELOG.md` - is
 written to be read by a person or fed to an AI, so the mod can be understood and changed.
@@ -78,8 +81,9 @@ Salvage works the same way for the same reason. `droneRuntime.commandSalvage` (r
 drone - `resolveAutomaticSalvageTarget` - but only ever an **owned** one, only from a player's own
 order, and only with the player's session in hand: nothing in `tickScene` ever makes that call for an
 idle drone. The salvage a player knows from the client's own auto-salvage button is that call, and it
-is still a click. This mod makes the click unnecessary, and adds the one question the server's own
-picker never asks - whether the wreck is someone else's, and whether taking it is allowed.
+is still a click. This mod makes the click unnecessary. It works every wreck in range, with no ownership filter of its
+own: stripping a hull moves no item, and the game's own rules still decide what a salvage cycle
+yields.
 
 ## What it does
 
@@ -110,6 +114,7 @@ picker never asks - whether the wreck is someone else's, and whether taking it i
 | Salvage drone launched, no order given | Auto-targets a wreck inside the ship's drone control range and starts salvaging it. |
 | Which wreck, default `nearest` | The closest wreck first. `/aud salvage distance farthest` works the field from the far end instead, which is what a long run through a belt of wrecks wants. |
 | Several idle drones, default `spread` | One wreck each, the nearest still collecting the remainder; `/aud salvage focus` puts the whole squadron on one wreck. |
+| Several ships in one fleet | They share one claim ledger and one scene scan per pass, so the fleet spreads across the field without rescanning it for every ship. Separate fleets and solo pilots keep independent ledgers. |
 | **Whose wreck it is** | Nobody asks. Stripping a hull moves no item, and in this game it is taking the loot that carries a suspect flag and not the hull - so a wreck that belonged to another pilot is worked exactly like your own. |
 | Salvage material | Goes into the cargo hold, which is where this server delivers drone salvage. The hold rule and the threshold read that hold. |
 | Hold cannot take one more unit | Every salvage drone of that ship recalls to the drone bay. |
@@ -167,7 +172,7 @@ Native : restart the server with StartServer.bat
 A healthy boot logs five lines:
 
 ```text
-[beta-AdvancedUtilityDrones] v1.0.2-beta.1 loader ready - control range follows the ship by default; ...
+[beta-AdvancedUtilityDrones] v1.0.3-beta.1 loader ready - control range follows the ship by default; ...
 [beta-AdvancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
 [beta-AdvancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
 [beta-AdvancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights

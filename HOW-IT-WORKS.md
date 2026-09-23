@@ -6,7 +6,7 @@
 > straight to the code.
 
 **Target:** EveJS 0.12.9 (SDE build 3396210)
-**Mod version:** 1.0.2-beta.1 · **Manifest kind:** `loader` · **Backends:** native and Docker
+**Mod version:** 1.0.3-beta.1 · **Manifest kind:** `loader` · **Backends:** native and Docker
 **Runtime requirement:** Node.js 18+ (the installer needs it on `PATH` too)
 
 ---
@@ -355,6 +355,10 @@ focus  : score = distance
 
    The penalty is what spreads a flight out without giving up: with the default 15 km a free rock
    20 km away beats a claimed one 5 km away, but when only one rock is left every drone stacks on it.
+   Claims are held in a pass-scoped ledger keyed by fleet. Every automated mining drone in one fleet
+   contributes its current target before any idle drone is assigned, so a staggered return cannot
+   make the next ship choose a rock another member is already mining. Separate fleets and solo pilots
+   keep separate ledgers.
 9. **Re-uses the vendor's own visibility gate** before each assignment:
    `droneRuntime._testing.canPlayerCompanionActOnTarget(scene, session, drone, ship, rock)` — the same
    check `commandMineRepeatedly` performs (`droneRuntime.js:932`, called at `droneRuntime.js:5508`).
@@ -523,22 +527,20 @@ same throttled tick, and it is deliberately the same shape: the idle gate, the d
 warping check and the hold rule are the mining ones, reused. What differs is what a candidate is.
 
 1. **Keeps only salvage drones** - `classifyDroneKind(...) === "salvage"`, the effect probe of 1.1.
-2. **Lists the wrecks** with `listSceneWrecks`: every entity the vendor's own
-   `salvagerRuntime.isSalvageableTarget` accepts inside the resolved control range, sorted by surface
-   distance.
-3. **Takes them all.** There is no ownership filter to apply: the list `listSceneWrecks` returned is
-   the list of targets, in the order the distance setting asks for.
-4. **Scores them**:
-
-```text
-spread : score = (+/-)distance + (drones already sent to that wreck * claimPenaltyMeters)
-focus  : score = (+/-)distance
-```
-
-   The sign is `/aud salvage distance`: `nearest` is the mining rule unchanged, `farthest` flips it so the
-   field is worked from the far end. The penalty is the mechanism that spreads a mining flight out,
-   reused - and the claims map is **per controller**, so two hulls sharing a field, or one pilot
-   running two of them, cannot count a wreck against each other.
+2. **Scans once per coordination scope.** `scanSceneWreckEntities` reads the scene's visible entities
+   and keeps the wrecks the vendor's own `salvagerRuntime.isSalvageableTarget` accepts.
+   `cachedSceneWreckEntities` stores that raw list in the current scene pass, keyed by fleet when the
+   pilot belongs to one and by character otherwise. Every ship in the same fleet therefore reuses one
+   scan; separate fleets and solo pilots get their own.
+3. **Sorts the raw list per ship.** `listSceneWrecks` measures each wreck from that ship's own
+   position, applies its control range, and orders the result by surface distance - ascending for
+   `nearest`, descending for `farthest`.
+4. **Consumes the ordered list with a cursor.** Spread mode takes the next unclaimed wreck without
+   rebuilding and sorting the candidate array for every drone. Once every wreck is claimed, a linear
+   fallback chooses the least-penalised one, so sharing starts only after the field is fully used.
+   Focus mode intentionally lets the squadron stack on the same wreck. Claims are seeded from every
+   automated drone before the first new assignment and are shared by the fleet, so the same wreck is
+   not handed to two ships when the field still has room.
 5. **Checks the hold** before each order, against the cargo hold, and recalls the whole squadron when
    it is full (section 5).
 6. **Issues the order**: `droneRuntime.commandSalvage(session, [droneID], targetID)` with the target
@@ -727,7 +729,7 @@ Verified against the other server-side mods installed on this server:
 | `moonOreAnomalies` | `dungeonUniverseRuntime.js` and dungeon content packs | None. Different files entirely. |
 | `autopilotJumpZero` | `beyonceService.js`, and the launcher's `NODE_OPTIONS` list | None. Different files, and both blocks append, so both load. It has to stay *first* in the preload list and this mod *last* (2.1). |
 | `EveJS-MoonMining-Fix` | `moonMiningBootstrap.js`, `moonOreChunkSpawner.js` | None. Different files. Section 6 is what makes moon-ore chunks reachable. |
-| Any "more drones per hull" mod | Nothing this mod knows about | None, and that is the point. The kind of a drone is read from its own effects (1.1), the drone list comes from the scene rather than a fixed roster, and the claims map is per controller and sized by nothing. A hull that launches fifty drones puts all fifty to work. |
+| Any "more drones per hull" mod | Nothing this mod knows about | None, and that is the point. The kind of a drone is read from its own effects (1.1), the drone list comes from the scene rather than a fixed roster, and the claim ledger is sized by nothing. A hull that launches fifty drones puts all fifty to work. |
 
 ### Invariants to preserve if you modify this mod
 
@@ -750,8 +752,9 @@ Verified against the other server-side mods installed on this server:
    an ownership policy the game does not have.
 8. **Never guess a drone's kind from a hard-coded type or name list.** The effect probe is what keeps
    third-party hulls working; a list would quietly leave their drones idle.
-9. **Keep the claims map per controller.** One map per scene would let two hulls in one belt starve
-   each other, and would get worse the more drones a hull launches.
+9. **Keep claim ledgers scoped to a fleet or a solo character.** One map per scene would let unrelated
+   pilots starve each other; one global map would leak claims across fleets. Resolve membership per
+   pass so a fleet change needs no cache invalidation.
 
 ---
 
@@ -761,11 +764,12 @@ Verified against the other server-side mods installed on this server:
 RunTests.bat      (or: node test/run.js)
 ```
 
-108 cases:
+122 cases:
 
 - **Range arithmetic** — the 120 km Rorqual case, the 140 km implant case, the 20 km base, fixed mode.
-- **Target selection** — idle drones only, range culling, ore/ice separation, spread vs focus, a drone
-  already ordered being left alone, the scan throttle, the player switch.
+- **Target selection** — idle drones only, range culling, ore/ice separation, spread vs focus, same-fleet
+  claims versus separate fleets and solo pilots, a ten-ship / fifty-drone mining run over a rich belt,
+  a drone already ordered being left alone, the scan throttle, and the player switch.
 - **Recall** — hold full, the bay the server actually delivers into deciding on its own, room left in
   a bay the server never reaches, damage, the suppression window, the per-character near-full
   threshold, and the stalled-drone guard that recalls when a hold stops growing.
@@ -804,9 +808,10 @@ RunTests.bat      (or: node test/run.js)
   the client shows, and a filter that matches nobody answering with the way back to the full list.
 - **Salvage** — the nearest wreck worked first whatever it used to belong to, `distance farthest`
   flipping the order, a full cargo hold stopping the squadron even with a mining bay standing empty,
-  two hulls sharing a field not counting a wreck against each other, the salvage menu being its own set
-  of switches, a 1.3.0 flat players entry read as the mining kind, and a hull that launches fifty
-  drones putting every one of them to work - for salvage and for mining alike.
+  separate fleets and solo pilots keeping separate claims, one fleet sharing a wreck scan and a claim
+  ledger, a stable working squadron never asking for the visible-entity scan, the salvage menu being
+  its own set of switches, a 1.3.0 flat players entry read as the mining kind, and a hull that launches
+  fifty drones putting every one of them to work - for salvage and for mining alike.
 - **Drones that are not ours** — a third-party drone flown by the effect its type carries rather than
   by its name, for salvage and for ore, and a drone whose type carries neither effect left alone.
 - **The installer** — the entrypoint and `StartServer.bat` transforms, idempotency, byte-exact

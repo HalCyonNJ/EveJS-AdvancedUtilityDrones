@@ -12,7 +12,7 @@ const commandScope = require("./lib/commandScope");
 const { createPlayerStore } = require("./lib/playerSettings");
 const { createRuntime, createServerDeps } = require("./lib/runtime");
 
-const MOD_VERSION = "1.0.2-beta.1";
+const MOD_VERSION = "1.0.3-beta.1";
 const MOD_DIR = __dirname;
 const RUNTIME_ROOT = path.resolve(MOD_DIR, "../..");
 const LOG_PREFIX = "[beta-AdvancedUtilityDrones]";
