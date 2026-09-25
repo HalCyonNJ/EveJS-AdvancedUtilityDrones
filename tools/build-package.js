@@ -5,7 +5,7 @@
 // The repository IS the mod folder, so the published artifact is GitHub's own
 // per-tag "Source code (zip)" and there is nothing to keep in sync. Some players
 // would rather take a file from Discord than follow a link, so every release
-// also gets one archive here: dist/beta-AdvancedUtilityDrones-<version>.zip,
+// also gets one archive here: dist/AdvancedUtilityDrones-<version>.zip,
 // produced with git archive of the release ref and prefixed with the folder
 // name - i.e. the same content the GitHub download hands out.
 //
@@ -22,7 +22,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const MOD_ROOT = path.resolve(__dirname, "..");
-const MOD_ID = "beta-AdvancedUtilityDrones";
+const MOD_ID = "AdvancedUtilityDrones";
 const DIST_DIR = path.join(MOD_ROOT, "dist");
 
 function fail(message) {

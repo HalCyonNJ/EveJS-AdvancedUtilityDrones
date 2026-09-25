@@ -25,7 +25,7 @@ echo     Docker  docker/entrypoint.sh
 echo     Native  StartServer.bat  (NODE_OPTIONS, read by both npm start paths)
 echo.
 echo   Files that are about to change are backed up under
-echo   ^<EveJS root^>\_beta-advancedutilitydrones-backup\ by default.
+echo   ^<EveJS root^>\_advancedutilitydrones-backup\ by default.
 echo.
 echo ------------------------------------------------------------
 echo.

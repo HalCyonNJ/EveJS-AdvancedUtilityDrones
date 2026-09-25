@@ -9,19 +9,19 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const MOD_ID = "beta-AdvancedUtilityDrones";
+const MOD_ID = "AdvancedUtilityDrones";
 const PAYLOAD_DIRNAME = "mod";
-const BACKUP_DIRNAME = "_beta-advancedutilitydrones-backup";
+const BACKUP_DIRNAME = "_advancedutilitydrones-backup";
 const REQUIRED_FILES = Object.freeze([
   path.join("server", "index.js"),
   path.join("server", "src", "services", "drone", "droneRuntime.js"),
 ]);
 // Everything under the mod root that belongs to the development checkout only.
 // The installer prunes these from an already-installed folder, so an installed
-// mods\beta-AdvancedUtilityDrones holds the payload and nothing else. tools/ is the
+// mods\AdvancedUtilityDrones holds the payload and nothing else. tools/ is the
 // Discord packager and dist/ is what it writes; neither is part of the mod.
 const DEV_ONLY_DIRECTORIES = Object.freeze(["installer", "tools", "dist", "node_modules", ".git"]);
-// Development files at the mod root: never copied into mods/beta-AdvancedUtilityDrones.
+// Development files at the mod root: never copied into mods/AdvancedUtilityDrones.
 // ANNOUNCEMENT.md holds the text that is pasted into Discord; it lives on the
 // author's machine only (git-ignored) and is listed here because the installer
 // copies the working tree, not the committed tree - without this the file would
@@ -278,7 +278,7 @@ function timestamp(date = new Date()) {
   );
 }
 
-// Archives a file or directory under <EveJS root>/_beta-advancedutilitydrones-backup/ so
+// Archives a file or directory under <EveJS root>/_advancedutilitydrones-backup/ so
 // uninstall.bat can always restore something by hand, even after a later mod
 // rewrites the same lines again.
 function archivePath(root, sourcePath, backupRoot) {

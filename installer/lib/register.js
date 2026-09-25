@@ -15,8 +15,8 @@ const NATIVE_MODS_PREFIX = "../mods";
 // that aborts on Node 24. StartServer.bat is excluded from the Docker build
 // context, so preloading through it cannot disturb an image build.
 const START_SERVER_ANCHOR = 'set "EVEJS_PROXY_LOCAL_INTERCEPT=1"';
-const START_SERVER_BEGIN = "rem --- beta-AdvancedUtilityDrones: preload the server-side loader ---";
-const START_SERVER_END = "rem --- beta-AdvancedUtilityDrones: end beta-AdvancedUtilityDrones preload ---";
+const START_SERVER_BEGIN = "rem --- AdvancedUtilityDrones: preload the server-side loader ---";
+const START_SERVER_END = "rem --- AdvancedUtilityDrones: end AdvancedUtilityDrones preload ---";
 
 // The only `node ... \` invocation in docker/entrypoint.sh whose continuation
 // carries this flag is a server launch, and Node applies --require to it no

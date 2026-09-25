@@ -1,4 +1,4 @@
-# Advanced Utility Drones v1.0.3-beta.1 - Installer
+# Advanced Utility Drones v1.0.3 - Installer
 
 Gives mining drones the auto-targeting every other drone in the game has: a launched drone finds the
 closest ore or ice inside the ship's drone control range and starts mining, and the squadron recalls
@@ -20,8 +20,8 @@ installed copy keeps its own manual.
 - Node.js 18 or newer on `PATH` to run the installer.
 - Windows, for the `.bat` wrappers - `install.bat`, `update.bat`, `uninstall.bat`, `status.bat`.
   `--server` takes any path, spaces included, and the mod always lands in
-  `<EveJS root>\mods\beta-AdvancedUtilityDrones`. Running the installer from inside an installed
-  `mods\beta-AdvancedUtilityDrones` is supported - the folder it is run from is never pruned, so the next
+  `<EveJS root>\mods\AdvancedUtilityDrones`. Running the installer from inside an installed
+  `mods\AdvancedUtilityDrones` is supported - the folder it is run from is never pruned, so the next
   upgrade is still one command.
 
 ## Install
@@ -53,13 +53,13 @@ of them when the machine holds more than one checkout, or when the sweep finds t
 point the sweep at specific places instead, set `EVEJS_ADVANCED_UTILITY_DRONES_SEARCH_BASES` to a ";"-separated
 list of directories; it replaces the drive list rather than adding to it.
 
-The installer always copies the mod to `<EveJS root>\mods\beta-AdvancedUtilityDrones`, and then registers
+The installer always copies the mod to `<EveJS root>\mods\AdvancedUtilityDrones`, and then registers
 the preload in every deployment it finds:
 
 | Deployment | Registered in | Entry added |
 |---|---|---|
-| Docker | `docker/entrypoint.sh` | `--require /app/mods/beta-AdvancedUtilityDrones/loader.js` |
-| Native | `StartServer.bat` | `NODE_OPTIONS=--require "...\mods\beta-AdvancedUtilityDrones\loader.js"` |
+| Docker | `docker/entrypoint.sh` | `--require /app/mods/AdvancedUtilityDrones/loader.js` |
+| Native | `StartServer.bat` | `NODE_OPTIONS=--require "...\mods\AdvancedUtilityDrones\loader.js"` |
 
 The entry is appended **after** every `--require` already in the list, in both `run_server()` and
 `run_all()`. That is deliberate: require order is `Module._load` hook order, and only the outermost
@@ -75,7 +75,7 @@ older installer mis-ordered gets repaired.
 
 Both registrations are idempotent, so running the installer twice changes nothing the second time.
 Every file it is about to rewrite is copied to
-`<EveJS root>\_beta-advancedutilitydrones-backup\<timestamp>\` first.
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\` first.
 
 Options:
 
@@ -87,7 +87,7 @@ Options:
 | `--force` | Reinstall even when the mod folder already looks current. |
 | `--update` | Same run, labelled as an update: it reports the version it replaces. `update.bat` does this for you. |
 
-An existing `mods\beta-AdvancedUtilityDrones\.env` is never overwritten on reinstall, so local edits
+An existing `mods\AdvancedUtilityDrones\.env` is never overwritten on reinstall, so local edits
 survive an upgrade. Delete it first if the shipped defaults are wanted back.
 
 ## After installing
@@ -100,9 +100,9 @@ Native : restart the server with StartServer.bat
 Then look for these lines in the server log:
 
 ```text
-[beta-AdvancedUtilityDrones] v1.0.3-beta.1 loader ready ...
-[beta-AdvancedUtilityDrones] drone tick hook installed ...
-[beta-AdvancedUtilityDrones] plain-chat trigger installed ...
+[AdvancedUtilityDrones] v1.0.3 loader ready ...
+[AdvancedUtilityDrones] drone tick hook installed ...
+[AdvancedUtilityDrones] plain-chat trigger installed ...
 ```
 
 ## Configure
@@ -113,7 +113,7 @@ the drones, which is what most people want.
 To change something, edit `<EveJS root>/config/advancedUtilityDrones.json` - copy the mod's
 `config.example.json` as a starting point. Under Docker that directory is already bind-mounted, so a
 change costs a container restart and never an image rebuild. An environment variable on the `server`
-service wins over the file, and a native install can use `mods\beta-AdvancedUtilityDrones\.env` instead.
+service wins over the file, and a native install can use `mods\AdvancedUtilityDrones\.env` instead.
 
 Precedence: environment variable > `config/advancedUtilityDrones.json` > mod `.env` > built-in default.
 
@@ -134,11 +134,11 @@ two entry points will actually produce:
 ```text
 Docker     : registered (D:\eve\docker\entrypoint.sh)
   Docker launch chain (--require order; the last entry owns the outermost hook)
-    run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> beta-AdvancedUtilityDrones
-    run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> beta-AdvancedUtilityDrones
+    run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
+    run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
 Native     : registered (D:\eve\StartServer.bat)
-  Native loader chain : autopilotJumpZero -> beta-AdvancedUtilityDrones
-                        (beta-AdvancedUtilityDrones is required last, so it owns the outermost hook)
+  Native loader chain : autopilotJumpZero -> AdvancedUtilityDrones
+                        (AdvancedUtilityDrones is required last, so it owns the outermost hook)
                         no loader block is dropped
 ```
 
@@ -170,7 +170,7 @@ update.bat
 
 Run this instead of uninstalling and reinstalling when a newer package arrives. A reinstall already
 does the right thing - the folder being replaced is archived under
-`<EveJS root>\_beta-advancedutilitydrones-backup\<timestamp>\`, the shipped payload is copied over it,
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\`, the shipped payload is copied over it,
 the same idempotent preload is applied again, and everything the operator owns is skipped because it
 already exists:
 
@@ -178,7 +178,7 @@ already exists:
 |---|---|
 | `config/advancedUtilityDrones.json` | Seeded only when it is missing; on a later run the keys this release added are inserted, and not one value that is there is edited. |
 | `config/advancedUtilityDrones.players.json` | Every character's saved choices. |
-| `mods\beta-AdvancedUtilityDrones\.env` | `copyPayload` skips an existing `.env`. |
+| `mods\AdvancedUtilityDrones\.env` | `copyPayload` skips an existing `.env`. |
 
 `update.bat` is the same program as `install.bat` with a different label, so it prints the version
 it replaced and the version it installed - and it brings `config/advancedUtilityDrones.json` up to the
@@ -202,7 +202,7 @@ uninstall.bat --server "C:\path\to\EveJS" --dry-run
 ```
 
 Removes the preload from both deployments and archives the mod folder under
-`<EveJS root>\_beta-advancedutilitydrones-backup\<timestamp>\`. The removals are surgical rather than
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\`. The removals are surgical rather than
 restored from a whole-file backup, so uninstalling this mod never undoes another mod that registered
 itself afterwards.
 

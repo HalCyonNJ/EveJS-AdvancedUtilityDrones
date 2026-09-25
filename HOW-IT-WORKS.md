@@ -6,7 +6,7 @@
 > straight to the code.
 
 **Target:** EveJS 0.12.9 (SDE build 3396210)
-**Mod version:** 1.0.3-beta.1 · **Manifest kind:** `loader` · **Backends:** native and Docker
+**Mod version:** 1.0.3 · **Manifest kind:** `loader` · **Backends:** native and Docker
 **Runtime requirement:** Node.js 18+ (the installer needs it on `PATH` too)
 
 ---
@@ -161,7 +161,7 @@ The installer therefore appends the preload **last** in the continuation list
 exec node \
   --require /app/mods/fourModeAsteroidBelts/loader.js \
   ...                                              \
-  --require /app/mods/beta-AdvancedUtilityDrones/loader.js \
+  --require /app/mods/AdvancedUtilityDrones/loader.js \
   .
 ```
 
@@ -188,15 +188,15 @@ if exist "...\autopilotJumpZero\loader.js" (
     set "NODE_OPTIONS=--require=".../autopilotJumpZero/loader.js""
   )
 )
-rem --- beta-AdvancedUtilityDrones: preload the server-side loader ---
-if exist "...\beta-AdvancedUtilityDrones\loader.js" (
+rem --- AdvancedUtilityDrones: preload the server-side loader ---
+if exist "...\AdvancedUtilityDrones\loader.js" (
   if defined NODE_OPTIONS (
-    set "NODE_OPTIONS=%NODE_OPTIONS% --require=".../beta-AdvancedUtilityDrones/loader.js""
+    set "NODE_OPTIONS=%NODE_OPTIONS% --require=".../AdvancedUtilityDrones/loader.js""
   ) else (
-    set "NODE_OPTIONS=--require=".../beta-AdvancedUtilityDrones/loader.js""
+    set "NODE_OPTIONS=--require=".../AdvancedUtilityDrones/loader.js""
   )
 )
-rem --- beta-AdvancedUtilityDrones: end beta-AdvancedUtilityDrones preload ---
+rem --- AdvancedUtilityDrones: end AdvancedUtilityDrones preload ---
 ```
 
 A neighbouring block is treated as **one unit** however many lines it spans: a marker-delimited block,
@@ -225,10 +225,10 @@ were written, and a container launch silently hands a wrapper the wrong exports 
 
 ```text
 Docker launch chain (--require order; the last entry owns the outermost hook)
-  run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> beta-AdvancedUtilityDrones
-  run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> beta-AdvancedUtilityDrones
-Native loader chain : autopilotJumpZero -> beta-AdvancedUtilityDrones
-                      (beta-AdvancedUtilityDrones is required last, so it owns the outermost hook)
+  run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
+  run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
+Native loader chain : autopilotJumpZero -> AdvancedUtilityDrones
+                      (AdvancedUtilityDrones is required last, so it owns the outermost hook)
                       no loader block is dropped
 ```
 
@@ -709,8 +709,8 @@ interval, an unknown `targetMode` — is logged with the offending key, and the 
 at all:
 
 ```text
-[beta-AdvancedUtilityDrones] EVEJS_ADVANCED_UTILITY_DRONES_SCAN_INTERVAL_MS must be between 100 and 60000
-[beta-AdvancedUtilityDrones] invalid mod-owned configuration - no hooks installed
+[AdvancedUtilityDrones] EVEJS_ADVANCED_UTILITY_DRONES_SCAN_INTERVAL_MS must be between 100 and 60000
+[AdvancedUtilityDrones] invalid mod-owned configuration - no hooks installed
 ```
 
 Mining drones then behave exactly like vanilla. Every entry point is also wrapped, so a throw inside
@@ -832,8 +832,8 @@ payload are the same tree the user downloads, and there is nothing to keep in sy
 
 **The Discord hand-out is one extra ZIP, built locally and never published.** Some players would
 rather take a file from Discord than follow a link, so every release also gets
-`dist/beta-AdvancedUtilityDrones-<version>.zip`, produced by `tools/BuildPackage.bat`
-(`node tools/build-package.js`): `git archive` of the release ref, prefixed with `beta-AdvancedUtilityDrones/`,
+`dist/AdvancedUtilityDrones-<version>.zip`, produced by `tools/BuildPackage.bat`
+(`node tools/build-package.js`): `git archive` of the release ref, prefixed with `AdvancedUtilityDrones/`,
 so it is the same content as the GitHub download. A player unzips it, drops the folder into `mods\` and
 runs `installer\install.bat`. The script refuses to run on a dirty working tree, reads the version out
 of `loader.js`, writes nothing but that one file, and prints its byte size, file count and sha256.
@@ -842,7 +842,7 @@ never pushed and never attached to a Release.
 
 What still matters is the pruning contract, which serves the installer alone: `installer/`, `tools/`,
 `dist/`, `node_modules/` and `.git/` are development-only and are listed in `DEV_ONLY_DIRECTORIES` in
-`installer/lib/deployment.js`, which is what keeps them out of an installed `mods/beta-AdvancedUtilityDrones`.
+`installer/lib/deployment.js`, which is what keeps them out of an installed `mods/AdvancedUtilityDrones`.
 `DEV_ONLY_FILES` is the list for a stray development *file* at the mod root - today that is
 `ANNOUNCEMENT.md`, the Discord copy that lives on the author's machine only.
 

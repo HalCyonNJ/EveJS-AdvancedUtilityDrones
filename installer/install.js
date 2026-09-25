@@ -7,7 +7,7 @@
  * transforms one file in memory. What has to be registered is the preload
  * itself, and each deployment offers a different place to do it:
  *
- *   Docker  docker/entrypoint.sh   --require /app/mods/beta-AdvancedUtilityDrones/loader.js
+ *   Docker  docker/entrypoint.sh   --require /app/mods/AdvancedUtilityDrones/loader.js
  *   Native  StartServer.bat        NODE_OPTIONS=--require %EVEJS_REPO_ROOT%\mods\...
  *                                  (inherited by both npm start branches)
  *
@@ -95,7 +95,7 @@ function parseArgs(argv) {
 }
 
 // The payload is the mod folder shipped beside the installer (`mod/` and
-// `beta-AdvancedUtilityDrones/` are both accepted), and this installer's parent
+// `AdvancedUtilityDrones/` are both accepted), and this installer's parent
 // directory in the development tree, where the mod is the git checkout itself.
 function payloadCandidates() {
   return [
@@ -170,7 +170,7 @@ function resolveRoot(options) {
 
 function copyPayload(source, target) {
   // The installer may be run from the folder it is asked to install into - the
-  // README's "put the folder in mods/beta-AdvancedUtilityDrones and run the installer
+  // README's "put the folder in mods/AdvancedUtilityDrones and run the installer
   // from inside it". There source and target are one directory, so the copy
   // would be a no-op at best and the prune below would delete the installer the
   // operator is still holding, update.bat and uninstall.bat included. Skip it.
@@ -201,7 +201,7 @@ function copyPayload(source, target) {
 function playersFileBody(payload) {
   const document = {
     _comment:
-      "Per-character settings for beta-AdvancedUtilityDrones. The key is the character ID " +
+      "Per-character settings for AdvancedUtilityDrones. The key is the character ID " +
       "and every key inside an entry is optional: anything a character does not set " +
       "falls back to " + CONFIG_DIRNAME + "/" + SERVER_CONFIG_FILE + ". Values set in " +
       "game through /aud mining or /aud salvage (or the plain-chat !aud trigger) are written " +
@@ -451,7 +451,7 @@ function main(mode = "install") {
   }
 
   out("============================================================");
-  out(`  Advanced Utility Drones Beta v${payload.version} - ${updating ? "Updater" : "Installer"}`);
+  out(`  Advanced Utility Drones v${payload.version} - ${updating ? "Updater" : "Installer"}`);
   out("============================================================");
   out(`  EveJS root : ${root}`);
   out(`  Payload    : ${payload.dir}`);
@@ -485,7 +485,7 @@ function main(mode = "install") {
   const modDir = path.join(root, "mods", deployment.MOD_ID);
   const existed = fs.existsSync(path.join(modDir, "loader.js"));
   // The payload may BE the target: an installer run from an installed
-  // mods/beta-AdvancedUtilityDrones. Nothing is copied then, and the report says so
+  // mods/AdvancedUtilityDrones. Nothing is copied then, and the report says so
   // rather than claiming an update it did not make.
   const selfInstall = deployment.sameDirectory(payload.dir, modDir);
   if (existed && !options.dryRun && !options.force) archiveOnce(modDir);
@@ -577,8 +577,8 @@ function main(mode = "install") {
     out("    Native : restart the server with StartServer.bat");
   }
   out("");
-  out(`  Confirm a boot line: [beta-AdvancedUtilityDrones] v${payload.version} loader ready`);
-  out("                        [beta-AdvancedUtilityDrones] drone tick hook installed");
+  out(`  Confirm a boot line: [AdvancedUtilityDrones] v${payload.version} loader ready`);
+  out("                        [AdvancedUtilityDrones] drone tick hook installed");
   out("");
   out("  Configuration — nothing is required: the default follows the drone");
   out("  control range of whatever ship launched the drones.");
@@ -587,7 +587,7 @@ function main(mode = "install") {
   out("                so editing it needs a container restart, not a rebuild.");
   out("    Players   : config/advancedUtilityDrones.players.json holds one entry per");
   out("                character; /aud writes it, and it travels with the mod.");
-  out("    Native    : mods/beta-AdvancedUtilityDrones/.env");
+  out("    Native    : mods/AdvancedUtilityDrones/.env");
   out("    Docker    : the server service env in compose.yaml, e.g.");
   out("                EVEJS_ADVANCED_UTILITY_DRONES_TARGET_MODE=focus");
   out("    Precedence: environment > config/advancedUtilityDrones.json > .env > defaults.");

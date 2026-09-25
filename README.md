@@ -125,10 +125,10 @@ yields.
 
 ## Install
 
-Get this folder into `<EveJS root>\mods\beta-AdvancedUtilityDrones` - clone the repository, copy the
+Get this folder into `<EveJS root>\mods\AdvancedUtilityDrones` - clone the repository, copy the
 folder, or take `Source code (zip)` from the release you want - and run the installer from inside it.
-The folder name matters: the preload points at `mods\beta-AdvancedUtilityDrones`, so a GitHub archive that
-unpacks as `EveJS-AdvancedUtilityDrones-beta-0.12.9` has to be renamed to that.
+The folder name matters: the preload points at `mods\AdvancedUtilityDrones`, so a GitHub archive that
+unpacks without the `AdvancedUtilityDrones` folder name has to be renamed to that.
 
 ```text
 installer\install.bat
@@ -136,7 +136,7 @@ installer\install.bat
 
 What it does is register the preload for the deployment you actually run - Docker or native - and
 nothing else. It is idempotent, it backs up every file it rewrites to
-`<EveJS root>\_beta-advancedutilitydrones-backup\<timestamp>\` first, and `installer\uninstall.bat` removes
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\` first, and `installer\uninstall.bat` removes
 its own line and leaves the rest alone.
 
 ### Installer (native and Docker)
@@ -146,21 +146,21 @@ finds the root itself - beside this folder, above it, and as a last resort on th
 drives - and stops to ask if the machine holds more than one checkout. Use
 `--server "C:\path\to\EveJS"` only to override that search, and updating and uninstalling take the
 same option (`installer\update.bat`, `installer\uninstall.bat`, `installer\status.bat`). Running the
-installer from inside an already-installed `mods\beta-AdvancedUtilityDrones` is supported - the folder the
+installer from inside an already-installed `mods\AdvancedUtilityDrones` is supported - the folder the
 installer runs from is never pruned, so `update.bat` and `uninstall.bat` are still there afterwards.
 
-It copies this folder to `<EveJS root>\mods\beta-AdvancedUtilityDrones` and registers the preload in every
+It copies this folder to `<EveJS root>\mods\AdvancedUtilityDrones` and registers the preload in every
 deployment it finds:
 
 | Deployment | Registered in | Entry added |
 |---|---|---|
-| Docker | `docker/entrypoint.sh`, in both `run_server()` and `run_all()` | `--require /app/mods/beta-AdvancedUtilityDrones/loader.js` |
-| Native | `StartServer.bat`, whose `NODE_OPTIONS` both `npm start` branches inherit | `NODE_OPTIONS=--require "...\mods\beta-AdvancedUtilityDrones\loader.js"` |
+| Docker | `docker/entrypoint.sh`, in both `run_server()` and `run_all()` | `--require /app/mods/AdvancedUtilityDrones/loader.js` |
+| Native | `StartServer.bat`, whose `NODE_OPTIONS` both `npm start` branches inherit | `NODE_OPTIONS=--require "...\mods\AdvancedUtilityDrones\loader.js"` |
 
 The entry is appended **last** in the continuation list on purpose: require order is
 `Module._load` hook order, and only the last-installed hook sees the exports object the final
 transform produced. Every file the installer rewrites is copied to
-`<EveJS root>\_beta-advancedutilitydrones-backup\<timestamp>\` first.
+`<EveJS root>\_advancedutilitydrones-backup\<timestamp>\` first.
 
 Afterwards rebuild a Docker deployment, or restart a native one:
 
@@ -172,11 +172,11 @@ Native : restart the server with StartServer.bat
 A healthy boot logs five lines:
 
 ```text
-[beta-AdvancedUtilityDrones] v1.0.3-beta.1 loader ready - control range follows the ship by default; ...
-[beta-AdvancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
-[beta-AdvancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
-[beta-AdvancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights
-[beta-AdvancedUtilityDrones] drone tick hook installed - idle drones are re-tasked every 500 ms (mining spread, salvage spread)
+[AdvancedUtilityDrones] v1.0.3 loader ready - control range follows the ship by default; ...
+[AdvancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
+[AdvancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
+[AdvancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights
+[AdvancedUtilityDrones] drone tick hook installed - idle drones are re-tasked every 500 ms (mining spread, salvage spread)
 ```
 
 ### Updating
@@ -194,8 +194,8 @@ value that is already in there is changed. Use `install.bat` if you prefer; both
 
 ### Manually
 
-1. Copy this folder to `<EveJS root>/mods/beta-AdvancedUtilityDrones`.
-2. Add `--require /app/mods/beta-AdvancedUtilityDrones/loader.js \` as the **last** `--require` line
+1. Copy this folder to `<EveJS root>/mods/AdvancedUtilityDrones`.
+2. Add `--require /app/mods/AdvancedUtilityDrones/loader.js \` as the **last** `--require` line
    inside the `node` invocation of both `run_server()` and `run_all()` in `docker/entrypoint.sh`.
 3. `docker compose build && docker compose up -d --no-deps server`.
 
@@ -227,7 +227,7 @@ side by side, so a character can automate one and not the other:
 
 ```json
 {
-  "_comment": "Per-character settings for beta-AdvancedUtilityDrones. ...",
+  "_comment": "Per-character settings for AdvancedUtilityDrones. ...",
   "_help": "mining.enabled: true|false ... salvage.distance: nearest|farthest ...",
   "characters": {
     "140000005": {
@@ -249,7 +249,7 @@ Every key inside an entry is optional, and anything a character does not set fal
 `config/advancedUtilityDrones.json` - so an owner sets the house rules once and each player overrides
 only what they care about. The file is created by the installer and by the first boot, it is re-read
 within 5 s of a hand edit, it travels with the mod, and `installer\uninstall.bat` removes it after archiving it
-under `_beta-advancedutilitydrones-backup/`. `playersFile` puts it somewhere else. The radius, the hold
+under `_advancedutilitydrones-backup/`. `playersFile` puts it somewhere else. The radius, the hold
 threshold and the takeover rule are not one kind's business, so they stay at the top level; the split
 is one level deep and nothing else.
 
@@ -498,4 +498,3 @@ against a throwaway EveJS tree, the configuration migration that brings an older
 `config/advancedUtilityDrones.json` up to the installed release's key set, and the carry-over that
 renames a `config/alternateMiningDrones.json` left by the old name into place without ever touching a
 file already sitting under the new one.
-

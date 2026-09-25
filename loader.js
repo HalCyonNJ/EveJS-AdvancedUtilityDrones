@@ -12,15 +12,15 @@ const commandScope = require("./lib/commandScope");
 const { createPlayerStore } = require("./lib/playerSettings");
 const { createRuntime, createServerDeps } = require("./lib/runtime");
 
-const MOD_VERSION = "1.0.3-beta.1";
+const MOD_VERSION = "1.0.3";
 const MOD_DIR = __dirname;
 const RUNTIME_ROOT = path.resolve(MOD_DIR, "../..");
-const LOG_PREFIX = "[beta-AdvancedUtilityDrones]";
-const INSTALL_FLAG = "__betaAdvancedUtilityDronesLoaderInstalled";
-const API_SYMBOL = "evejs.betaAdvancedUtilityDrones";
-const TICK_MARKER = Symbol.for("evejs.betaAdvancedUtilityDrones.tickScene");
-const COMMAND_MARKER = Symbol.for("evejs.betaAdvancedUtilityDrones.command");
-const LAUNCH_MARKER = Symbol.for("evejs.betaAdvancedUtilityDrones.launch");
+const LOG_PREFIX = "[AdvancedUtilityDrones]";
+const INSTALL_FLAG = "__advancedUtilityDronesLoaderInstalled";
+const API_SYMBOL = "evejs.advancedUtilityDrones";
+const TICK_MARKER = Symbol.for("evejs.advancedUtilityDrones.tickScene");
+const COMMAND_MARKER = Symbol.for("evejs.advancedUtilityDrones.command");
+const LAUNCH_MARKER = Symbol.for("evejs.advancedUtilityDrones.launch");
 
 // Three vendor files are touched, and none of them is rewritten on disk: the
 // drone runtime is wrapped through its exported tickScene, chatCommands through

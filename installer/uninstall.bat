@@ -19,7 +19,7 @@ echo   With no arguments EveJS is located the same way the installer
 echo   locates it: beside this folder, above it, then the local drives.
 echo.
 echo   Removes the preload from every deployment and archives the mod
-echo   folder under ^<EveJS root^>\_beta-advancedutilitydrones-backup\.
+echo   folder under ^<EveJS root^>\_advancedutilitydrones-backup\.
 echo.
 echo ------------------------------------------------------------
 echo.

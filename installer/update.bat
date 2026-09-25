@@ -18,11 +18,11 @@ echo   With no arguments this assumes EveJS is installed on this computer
 echo   and looks for it: beside this folder, above it, and failing that
 echo   anywhere on the local drives. Pass --server only to override that.
 echo.
-echo   Replaces mods\beta-AdvancedUtilityDrones with the version in this package
+echo   Replaces mods\AdvancedUtilityDrones with the version in this package
 echo   and re-applies the preload for every deployment it finds. Your
 echo   config, the players file and a local .env are never overwritten,
 echo   and the folder being replaced is archived under
-echo   ^<EveJS root^>\_beta-advancedutilitydrones-backup first.
+echo   ^<EveJS root^>\_advancedutilitydrones-backup first.
 echo.
 echo   After it finishes: rebuild Docker, or restart the native server.
 echo.

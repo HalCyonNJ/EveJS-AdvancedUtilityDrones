@@ -1,16 +1,16 @@
 # Changelog
 
-Advanced Utility Drones. The EveJS 0.12.9 Beta port is kept beside the stable 0.12.8 line; the stable
-release history remains below unchanged.
+Advanced Utility Drones. The 0.12.9 line is the current release line; the earlier
+release history remains below.
 
 Every release is a drop-in replacement for the one before it within the same line: run `update.bat`
-over an existing install, or copy the `beta-AdvancedUtilityDrones/` folder over the one in `mods/`.
+over an existing install, or copy the `AdvancedUtilityDrones/` folder over the one in `mods/`.
 Nothing outside that folder is edited, no player installs anything, and every value you have set
 stays exactly as it is: the installer only adds the keys a later release introduced, and stamps the
 file with the release it was brought up to. A server keeps its settings and every player keeps their
 saved choices.
 
-## 1.0.3-beta.1 - 2026-09-23
+## 1.0.3 - 2026-09-25
 
 ### Changed
 
@@ -37,7 +37,7 @@ saved choices.
 
 ---
 
-## 1.0.2-beta.1 - 2026-09-23
+## 1.0.2 - 2026-09-23
 
 ### Fixed
 
@@ -64,21 +64,20 @@ saved choices.
 ### Verification
 
 - The development suite passes **116/116**.
-- The installed Beta payload suite passes **89/89** inside the 0.12.9 container.
+- The installed payload suite passes **89/89** inside the 0.12.9 container.
 
 ---
 
-## 1.0.1-beta.1 - 2026-09-23
+## 1.0.1 - 2026-09-23
 
-**EveJS 0.12.9 Beta port. The gameplay implementation is unchanged from Advanced Utility Drones
+**EveJS 0.12.9 port. The gameplay implementation is unchanged from Advanced Utility Drones
 1.0.0.**
 
 ### Added
 
-- **A side-by-side Beta package.** The install folder, mod id, API symbols, install marker, log prefix
-  and backup root use the `beta-AdvancedUtilityDrones` /
-  `_beta-advancedutilitydrones-backup` identity, so this build can be installed next to the stable
-  0.12.8 release without overwriting it.
+- **A release package for the 0.12.9 line.** The install folder, mod id, API symbols, install
+  marker, log prefix and backup root use the `AdvancedUtilityDrones` /
+  `_advancedutilitydrones-backup` identity.
 - **EveJS 0.12.9 compatibility metadata.** `evejs-launcher.mod.json` declares `0.12.9`, and the
   installation guidance and loader diagnostics now target 0.12.9.
 
@@ -93,8 +92,8 @@ saved choices.
 
 ### Verification
 
-- The development suite passes **110/110** against the 0.12.9 Beta tree, and the installed payload
-  suite passes **83/83** inside the Beta deployment.
+- The development suite passes **110/110** against the 0.12.9 tree, and the installed payload
+  suite passes **83/83** inside the 0.12.9 deployment.
 
 ---
 

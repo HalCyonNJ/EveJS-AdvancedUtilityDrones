@@ -807,7 +807,7 @@ test("the chat overlay answers on /aud mining and toggles the player state", () 
   const untouched = upstream.executeChatCommand(world.session, "/help", chatHub, {});
   assert.deepEqual(untouched, { handled: false });
   const status = upstream.executeChatCommand(world.session, "/aud mining status", chatHub, {});
-  assert.match(status.message, /beta-AdvancedUtilityDrones v/);
+  assert.match(status.message, /AdvancedUtilityDrones v/);
 });
 
 test("the chat overlay answers on the dot prefix used by non-staff clients", () => {
@@ -1017,7 +1017,7 @@ test("the loader wraps tickScene through Module._load and overrides chat", () =>
     const chatRuntime = require(chatRuntimePath);
     assert.throws(
       () => chatRuntime.broadcastLocalMessage(world.session, "!aud target spread"),
-      (error) => /^beta-AdvancedUtilityDrones/.test(error.message),
+      (error) => /^AdvancedUtilityDrones/.test(error.message),
     );
     assert.equal(chatRuntime.calls.length, 0, "the trigger must never be broadcast");
     chatRuntime.broadcastLocalMessage(world.session, "hello belt");
@@ -1339,7 +1339,7 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // else. Throwing is the reply, not a failure.
   assert.throws(
     () => upstream.broadcastLocalMessage(world.session, "!aud mining target focus"),
-    (error) => /^beta-AdvancedUtilityDrones/.test(error.message),
+    (error) => /^AdvancedUtilityDrones/.test(error.message),
   );
   assert.equal(broadcast.length, 0, "the trigger must never be broadcast");
   assert.equal(runtime.getPlayerState(7).targetMode, "focus");
@@ -1348,7 +1348,7 @@ test("a plain chat line drives the mod so a character without staff rights can u
   // nothing.
   assert.throws(
     () => upstream.broadcastLocalMessage(world.session, "!aud"),
-    (error) => /beta-AdvancedUtilityDrones - \/aud/.test(error.message),
+    (error) => /AdvancedUtilityDrones - \/aud/.test(error.message),
   );
   assert.equal(runtime.getPlayerState(7).targetMode, "focus");
 
@@ -1477,10 +1477,10 @@ test("the root takes two spellings and nothing shorter", () => {
 
   // "/aud" and "/aud h" are the two menus and nothing else.
   const root = run("/aud");
-  assert.match(root.message, /beta-AdvancedUtilityDrones - \/aud/);
+  assert.match(root.message, /AdvancedUtilityDrones - \/aud/);
   assert.match(root.message, /\/aud mi \[command\]/);
   assert.match(root.message, /\/aud sa \[command\]/);
-  assert.match(run("/aud h").message, /beta-AdvancedUtilityDrones - \/aud/);
+  assert.match(run("/aud h").message, /AdvancedUtilityDrones - \/aud/);
 
   // Whole-character commands are not one kind's business: a bare "/aud" is the
   // two menus, and "/aud help" is where copy and clear are named.
@@ -2285,7 +2285,7 @@ test("chat: /aud mining help and /aud mining filter help are two lists", () => {
 
   const top = run("help").message;
   assert.deepEqual(top.split("\n"), [
-    "beta-AdvancedUtilityDrones - /aud mi",
+    "AdvancedUtilityDrones - /aud mi",
     "  /aud mi on|off",
     "  /aud mi tg spread|focus",
     "  /aud mi rg [<meters|ship>]",
@@ -2304,7 +2304,7 @@ test("chat: /aud mining help and /aud mining filter help are two lists", () => {
 
   const filterHelp = run("filter help").message;
   assert.deepEqual(filterHelp.split("\n"), [
-    "beta-AdvancedUtilityDrones - /aud mi fl",
+    "AdvancedUtilityDrones - /aud mi fl",
     "  /aud mi fl ad <name|id>[, ...]",
     "  /aud mi fl mv <name|id> [place]",
     "  /aud mi fl dl <name|id>",
@@ -2624,7 +2624,7 @@ test("chat: the kind comes first, and the retired spellings only say so", () => 
   // verb typed without one is answered with both spellings of itself.
   assert.equal(chatCommand.matchCommand("/aud", config), "");
   const menu = chatCommand.handleCommand(runtime, config, world.session, "");
-  assert.match(menu.message, /beta-AdvancedUtilityDrones - \/aud/);
+  assert.match(menu.message, /AdvancedUtilityDrones - \/aud/);
   assert.match(menu.message, /\/aud mi \[command\]/);
   assert.match(menu.message, /\/aud sa \[command\]/);
   const ambiguous = chatCommand.handleCommand(runtime, config, world.session, "spread");
@@ -3304,7 +3304,7 @@ test("chat: the salvage menu is its own set of switches", () => {
   const run = (line) => chatCommand.handleCommand(runtime, config, world.session, "salvage " + line);
 
   assert.deepEqual(run("help").message.split("\n"), [
-    "beta-AdvancedUtilityDrones - /aud sa",
+    "AdvancedUtilityDrones - /aud sa",
     "  /aud sa on|off",
     "  /aud sa tg spread|focus",
     "  /aud sa ds nearest|farthest",
@@ -3317,7 +3317,7 @@ test("chat: the salvage menu is its own set of switches", () => {
     "  /aud sa st",
     "  /aud sa h",
   ], "the salvage help is short syntax only");
-  assert.match(run("status").message, /beta-AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("status").message, /AdvancedUtilityDrones v.* salvage/);
   assert.match(run("status").message, /wrecks\s+: 1 in range/);
   assert.match(run("status").message, /cargo hold/);
   assert.match(run("list").message, /wrecks in range/);
@@ -3349,7 +3349,7 @@ test("chat: the salvage menu is its own set of switches", () => {
   assert.match(run("tg spread").message, /salvage targeting mode: SPREAD/);
   assert.match(run("sp").message, /unknown option "sp"/);
   assert.match(run("fo").message, /unknown option "fo"/);
-  assert.match(run("st").message, /beta-AdvancedUtilityDrones v.* salvage/);
+  assert.match(run("st").message, /AdvancedUtilityDrones v.* salvage/);
   assert.match(run("d").message, /unknown option "d"/);
   assert.match(run("o").message, /unknown option "o"/);
   assert.match(run("bogus").message, /unknown option "bogus"/);

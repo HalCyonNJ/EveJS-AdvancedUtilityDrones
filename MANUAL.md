@@ -1,6 +1,6 @@
 # Advanced Utility Drones - Manual
 
-Applies to **v1.0.3-beta.1** on EveJS 0.12.9.
+Applies to **v1.0.3** on EveJS 0.12.9.
 
 The command is `/aud`; `!aud` is the same command from ordinary chat. The kind of drone comes
 first: `mining` (`mi`) or `salvage` (`sa`). In game, the help lists use the short forms. The
