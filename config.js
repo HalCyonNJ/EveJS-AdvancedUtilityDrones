@@ -147,7 +147,7 @@ const ORE_FILTER_MAX_PATTERN_LENGTH = 24;
 const ORE_FILTER_ANY_ENTRIES = Object.freeze(["any", "*", "all"]);
 // The five moon-asteroid families of SDE build 3396210: 1884 Ubiquitous,
 // 1920 Common, 1921 Uncommon, 1922 Rare, 1923 Exceptional. Same list the
-// server keeps in server/src/services/structure/autoMoonMiningService.js.
+// server keeps in server/src/services/structure/moonExtractionRules.js:181.
 const MOON_ORE_GROUP_IDS = Object.freeze([1884, 1920, 1921, 1922, 1923]);
 
 const DEFAULTS = Object.freeze({

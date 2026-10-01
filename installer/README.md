@@ -132,14 +132,13 @@ Reports the mod folder and which deployments currently carry the preload, plus t
 two entry points will actually produce:
 
 ```text
-Docker     : registered (D:\eve\docker\entrypoint.sh)
+Docker     : registered (<repo>/docker/entrypoint.sh)
   Docker launch chain (--require order; the last entry owns the outermost hook)
-    run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
-    run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
-Native     : registered (D:\eve\StartServer.bat)
-  Native loader chain : autopilotJumpZero -> AdvancedUtilityDrones
-                        (AdvancedUtilityDrones is required last, so it owns the outermost hook)
-                        no loader block is dropped
+    run_server : autopilotJumpZero -> AdvancedUtilityDrones
+    run_all    : autopilotJumpZero -> AdvancedUtilityDrones
+Native     : not registered (<repo>/StartServer.bat carries no loader block yet)
+  Native loader chain : (nothing registered)
+                        the installer adds the block here, with AdvancedUtilityDrones required last
 ```
 
 Neither line is a copy of what the installer wrote: both are read back out of the files.

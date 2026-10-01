@@ -15,13 +15,13 @@
 
 In EVE the **client** decides which rock a mining drone mines and which wreck a salvage drone works.
 It sends `Handle_CmdMineRepeatedly([droneID], rockID)` —
-`server/src/services/drone/entityService.js:90` — or `Handle_CmdSalvage([droneID], wreckID)` —
-`entityService.js:95` — and the server does exactly that. Nothing on the server ever chooses a target
+`server/src/services/drone/entityService.js:92` — or `Handle_CmdSalvage([droneID], wreckID)` —
+`entityService.js:96` — and the server does exactly that. Nothing on the server ever chooses a target
 for an idle drone, so a launched drone parks at `activityState = STATE_IDLE` with `droneCommand =
 null` until somebody clicks.
 
 This mod wraps `droneRuntime.tickScene` **after** the vendor tick has run
-(`server/src/services/drone/droneRuntime.js:7495`, called from `server/src/space/runtime.js:48466`)
+(`server/src/services/drone/droneRuntime.js:7981`, called from `server/src/space/runtime/scene/tick.js:512`)
 and, for every ship that owns an idle drone, calls the very same
 `commandMineRepeatedly(session, [droneID], targetID)` or
 `commandSalvage(session, [droneID], targetID)` the client would have called. From the server's point
@@ -31,7 +31,7 @@ drone is doing.
 
 The two kinds are symmetric in the only place that matters: a wreck is a target, the same as a rock.
 `commandSalvage` can choose a wreck on its own — `resolveAutomaticSalvageTarget`
-(`droneRuntime.js:5411`, reached only from `commandSalvage` with a zero target) — but only ever an
+(`droneRuntime.js:5712`, reached only from `commandSalvage` with a zero target) — but only ever an
 **owned** one, and only from a player's order, so the mod names the wreck explicitly instead and lets
 the same vendor command do the work.
 
@@ -60,19 +60,19 @@ wreck left to work.
 
 | `droneCommand` | What the tick does |
 |---|---|
-| `"ENGAGE"` | Combat targeting, including the `droneAssist` pilot assignment (`getDronePilotAssignment`, `droneRuntime.js:2583`). |
-| `"MINE"` | Mines `droneEntity.targetID`, and only that (`droneRuntime.js:7554`). |
+| `"ENGAGE"` | Combat targeting, including the `droneAssist` pilot assignment (`getDronePilotAssignment`, `droneRuntime.js:2777`). |
+| `"MINE"` | Mines `droneEntity.targetID`, and only that (`droneRuntime.js:8049`). |
 | `"SALVAGE"`, `"REPAIR"`, `"RETURN_HOME"`, `"RETURN_BAY"` | Their own handlers. |
 | `null` | Nothing. The drone holds its orbit around the controller. |
 
 `SALVAGE` is the one row that is never reached on its own: `tickDroneSalvage`
-(`droneRuntime.js:7142`) runs the cycle for a drone that already has a `SALVAGE` task, and nothing in
+(`droneRuntime.js:7596`) runs the cycle for a drone that already has a `SALVAGE` task, and nothing in
 `tickScene` ever assigns one. `commandSalvage` is exported from the same module
-(`droneRuntime.js:7670`) and reached through `entityService.js:95`, so an order is the only way in —
+(`droneRuntime.js:8165`) and reached through `entityService.js:96`, so an order is the only way in —
 which is the whole gap this mod fills for salvage.
 
-`launchDronesForSession` (`droneRuntime.js:4502`) leaves a freshly launched drone in that last row:
-`activityState = STATE_IDLE` plus `clearDroneTaskState(droneEntity)` (`droneRuntime.js:4711-4713`).
+`launchDronesForSession` (`droneRuntime.js:4793`) leaves a freshly launched drone in that last row:
+`activityState = STATE_IDLE` plus `clearDroneTaskState(droneEntity)` (`droneRuntime.js:5003-5005`).
 There is no acquisition step for mining the way there is for combat, so the drone is inert until a
 `CmdMineRepeatedly` arrives.
 
@@ -105,7 +105,7 @@ name contains "mining" / "excavator" / "harvester" -> ore drone -> ore rocks onl
    the same `mining` effect, ice harvesters included.
 
 Matching on the name is safe because EveJS resolves every type name through `localName`
-(`server/src/services/_shared/referenceData.js:81`), which prefers the `en` string.
+(`server/src/services/_shared/referenceData.js:78`), which prefers the `en` string.
 
 In SDE build 3396210 there are **18 mining drones** — 11 ore (Civilian Mining Drone, Harvester Mining
 Drone, Mining Drone I, Mining Drone - Improved, Mining Drone II, Mining Drone - Elite, both
@@ -122,7 +122,7 @@ because this mod ignores them, but because nothing in the game can mine them wit
 ## 2. The seam
 
 `droneRuntime.tickScene` is called as a property access —
-`droneRuntime.tickScene(this, now)` (`server/src/space/runtime.js:48466`) — so replacing that one
+`droneRuntime.tickScene(this, now)` (`server/src/space/runtime/scene/tick.js:512`) — so replacing that one
 property on the module exports is enough to intercept every scene tick without touching any file:
 
 ```js
@@ -139,8 +139,8 @@ Two consequences of running **after** the vendor tick, both intentional:
 - A drone launched during this tick is already in the scene with `STATE_IDLE`, so it is picked up by
   the very next pass instead of a tick later.
 - `getControllerDogmaContext` is called outside `beginDogmaTick`/`endDogmaTick`
-  (`droneDogma.js:443-450`). That is supported — it simply falls back to the normal fingerprint cache
-  (`droneDogma.js:452-505`) instead of the per-tick memo. The mod caches the resolved range on the ship
+  (`droneDogma.js:452`, `:457`). That is supported — it simply falls back to the normal fingerprint
+  cache (`droneDogma.js:480`) instead of the per-tick memo. The mod caches the resolved range on the ship
   entity keyed by that fingerprint, so the cost is one resolve per refit, not one per scan.
 
 The mod installs itself through `Module._load` chaining and **requires no server module at load
@@ -151,15 +151,15 @@ into the module cache before the mods that rewrite those files have installed th
 
 `--require` order is `Module._load` hook order. The last loader required owns the outermost hook, and
 only that hook sees the exports object the final transform produced. A mod that compiles transformed
-source — `fourModeAsteroidBelts` does exactly that for `droneRuntime.js` — returns a **new** exports
-object, so a patch applied to an earlier one is silently discarded.
+source — compiling `droneRuntime.js` into a fresh module, say — returns a **new** exports object, so a
+patch applied to an earlier one is silently discarded.
 
 The installer therefore appends the preload **last** in the continuation list
 (`installer/lib/register.js`, `applyEntrypointPreload`):
 
 ```text
 exec node \
-  --require /app/mods/fourModeAsteroidBelts/loader.js \
+  --require /app/mods/autopilotJumpZero/loader.js \
   ...                                              \
   --require /app/mods/AdvancedUtilityDrones/loader.js \
   .
@@ -167,9 +167,10 @@ exec node \
 
 Keep it last in both `run_server()` and `run_all()` if you edit `docker/entrypoint.sh` by hand.
 
-The same rule decides where the **Windows launcher's** block goes. `StartServer.bat` preloads loader
-mods by appending `--require` to `NODE_OPTIONS`, and another mod may already own that variable - the
-live one does. Three consequences:
+The same rule decides where the **Windows launcher's** block goes when the installer adds one:
+`StartServer.bat` preloads loader mods by appending `--require` to `NODE_OPTIONS`, a variable another
+loader may already own. (This checkout's own `StartServer.bat` carries no loader block - the two mods
+here are preloaded by `docker/entrypoint.sh` alone.) Three consequences:
 
 - The block **appends** instead of assigning, and only assigns outright when `NODE_OPTIONS` is unset.
   `if not defined NODE_OPTIONS` (first writer wins) silently drops whichever mod registers second; a
@@ -214,10 +215,10 @@ Two rules for every mod that preloads into the server, on either deployment:
    just lines, so add an entry instead of rewriting the invocation.
 2. **Order by kind.** A *replacement* hook (one that compiles a target into new exports) belongs
    **innermost** = first in the list. A *wrapping* hook (one that patches the exports it is handed)
-   belongs **outermost** = last. `soloProgressionBalance` compiles `droneRuntime.js` into fresh
-   exports, so it has to sit in front of this mod; `autopilotJumpZero` compiles `beyonceService.js`,
-   so it has to sit in front of anything that wraps that file. The two ends of the list are claimed
-   by different mods on purpose, not by accident.
+   belongs **outermost** = last. A mod that compiles `droneRuntime.js` into fresh exports has to sit
+   in front of this mod; `autopilotJumpZero` compiles `beyonceService.js`, so it has to sit in front
+   of anything that wraps that file. The two ends of the list are claimed by different hooks on
+   purpose, not by accident - on this server by `autopilotJumpZero` and this mod.
 
 Neither deployment reports a violation. `cmd.exe` simply ends up with fewer `--require` entries than
 were written, and a container launch silently hands a wrapper the wrong exports object.
@@ -225,11 +226,10 @@ were written, and a container launch silently hands a wrapper the wrong exports 
 
 ```text
 Docker launch chain (--require order; the last entry owns the outermost hook)
-  run_server : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
-  run_all    : fourModeAsteroidBelts -> soloProgressionBalance -> moonOreAnomalies -> autopilotJumpZero -> AdvancedUtilityDrones
-Native loader chain : autopilotJumpZero -> AdvancedUtilityDrones
-                      (AdvancedUtilityDrones is required last, so it owns the outermost hook)
-                      no loader block is dropped
+  run_server : autopilotJumpZero -> AdvancedUtilityDrones
+  run_all    : autopilotJumpZero -> AdvancedUtilityDrones
+Native loader chain : (nothing registered) - this checkout's StartServer.bat carries no loader block
+                      (AdvancedUtilityDrones is required last in the Docker list, so it owns the outermost hook)
 ```
 
 Every server launch is listed separately, because patching one branch of the entrypoint by hand and
@@ -240,11 +240,10 @@ warning: that is only a problem if it replaces a file this mod wraps.
 The status command also compares each chain against `mods/`. A folder that carries a `loader.js` and
 appears in no chain is installed and completely inert - it loads nothing, logs nothing and does
 nothing, and no EveJS surface says so. It is a note rather than a warning, because a checkout ships
-both entry points while its owner runs only one of them, and because the mods it names belong to
-other authors:
+both entry points while its owner runs only one of them:
 
 ```text
-  [note] Native: in mods/ but not preloaded by this launcher: fourModeAsteroidBelts, moonOreAnomalies, soloProgressionBalance
+  [note] Native: in mods/ but not preloaded by this launcher: AdvancedUtilityDrones, autopilotJumpZero
 ```
 
 Only the chain for the deployment you actually run matters. `install.bat --docker-only` or
@@ -259,10 +258,9 @@ the audit reports its line number so it can be moved above this block or switche
 
 ### 2.2 The chat overlay
 
-`/aud` is an overlay on `chatCommands.executeChatCommand`, installed the same way
-`fourModeAsteroidBelts` installs `/beltmode` and `/beltvolume`: the previous function is captured, a
+`/aud` is an overlay on `chatCommands.executeChatCommand`: the previous function is captured, a
 new one replaces the exported property, and anything that is not an `/aud` message is handed
-`COMMANDS_HELP_TEXT` (a joined string, not an array — see `chatCommands.js:512-658`), so `/help`
+`COMMANDS_HELP_TEXT` (a joined string, not an array — see `chatCommands.js:455-605`), so `/help`
 lists them — what is appended is the root list (the two menus), the commands that follow `/aud mining`, and
 the filter's own list behind `/aud mining filter help`, which keeps `/aud mining help` to one screen. Every list
 is built the same way (one line per command, the line being what to type), and each menu ends with a
@@ -279,8 +277,8 @@ at. `spread` and `focus` are not commands any more: they are the values of `targ
 full. `lib/chatCommand.js` holds the whole grammar; the two menus share the helpers for the settings
 that belong to a character (radius, threshold, takeover), so neither menu owns them.
 
-Consumers destructure that export at load time (`slashService.js:15`, `lscService.js:11`,
-`xmppStubServer.js:27`), which is fine **because the overlay is installed when `chatCommands` is first
+Consumers destructure that export at load time (`slashService.js:18`, `lscService.js:13`,
+`xmppStubServer.js:30`), which is fine **because the overlay is installed when `chatCommands` is first
 required** — before any of those destructurings receive the function.
 
 Every overlay chains instead of replacing, so all of them keep working regardless of install order,
@@ -289,10 +287,10 @@ and each marks itself with its own `Symbol.for(...)` to stay idempotent.
 ### 2.3 The ordinary-chat trigger (no staff rights)
 
 A line the player types without a leading `/` never reaches `executeChatCommand`. The client sends
-`/`-prefixed input as a `slash.SlashCmd` call (`slashService.js:211`; `slash-debug.log` records the raw
+`/`-prefixed input as a `slash.SlashCmd` call (`slashService.js:214`; `slash-debug.log` records the raw
 line arriving as `command="/aud mining focus"`), while anything else is an XMPP `groupchat` message.
-`xmppStubServer.handleGroupMessage` (`xmppStubServer.js:2727`) reads the body, and for a plain line it
-goes straight to `chatRuntime.broadcastLocalMessage(session, body)` (`chatRuntime.js:1702`) and then to
+`xmppStubServer.handleGroupMessage` (`xmppStubServer.js:2730`) reads the body, and for a plain line it
+goes straight to `chatRuntime.broadcastLocalMessage(session, body)` (`chatRuntime.js:1701`) and then to
 `deliverRoomMessage(...)` - unconditionally, and without asking anything. So `!aud` cannot be
 handled in `chatCommands`; it has to be consumed at the broadcaster.
 
@@ -308,7 +306,7 @@ sendResult = chatRuntime.broadcastLocalMessage(session, body);
 //                     formatChannelAccessError(error, "speak")); return; }
 ```
 
-That catch is the whole mechanism. `formatChannelAccessError` (`xmppStubServer.js:992`) ends with
+That catch is the whole mechanism. `formatChannelAccessError` (`xmppStubServer.js:995`) ends with
 `return error.message` for any error whose `code` it does not recognise, so an unrecognised throw is
 rendered as its own text, sent to the sender alone, and the `return` skips the broadcast, the backlog
 entry and every other member. One throw therefore does four things at once: it replies, it suppresses
@@ -340,9 +338,9 @@ buckets the scene's drones by `controllerID`, and for each ship:
 5. **Keeps only idle drones**: no `droneCommand`, no `droneAssist`,
    `activityState === STATE_IDLE`, and not inside the 120 s post-recall suppression window.
 6. **Collects candidates**: every entity in `ensureSceneMiningState(scene).byEntityID`
-   (`miningRuntimeState.js:885`) with `remainingQuantity > 0` and a `yieldKind` matching one of the
+   (`miningRuntimeState.js:887`) with `remainingQuantity > 0` and a `yieldKind` matching one of the
    idle drones' kinds, sorted by surface distance and cut to `maxCandidates`. `yieldKind` is
-   `ore` / `ice` / `gas` (`miningRuntimeState.js:148`).
+   `ore` / `ice` / `gas` (`miningRuntimeState.js:149`).
 7. **Culls by range**: `surfaceDistance(ship, rock)` is the *surface* distance (centre distance minus
    both radii), the same measure the client uses, compared against the resolved control range
    (section 4).
@@ -361,15 +359,15 @@ focus  : score = distance
    keep separate ledgers.
 9. **Re-uses the vendor's own visibility gate** before each assignment:
    `droneRuntime._testing.canPlayerCompanionActOnTarget(scene, session, drone, ship, rock)` — the same
-   check `commandMineRepeatedly` performs (`droneRuntime.js:932`, called at `droneRuntime.js:5508`).
+   check `commandMineRepeatedly` performs (`droneRuntime.js:960`, called at `droneRuntime.js:5810`).
    A rock the drone could not be ordered onto is never ordered onto.
 10. **Issues the order**: `droneRuntime.commandMineRepeatedly(session, [droneID], targetID)`
-    (`droneRuntime.js:5470`). The vendor then sets `droneCommand = "MINE"`, computes the pursuit or
+    (`droneRuntime.js:5771`). The vendor then sets `droneCommand = "MINE"`, computes the pursuit or
     orbit behaviour and starts the cycle — identical to a player's click in every respect.
 
 Because the vendor function is used verbatim, the drone behaves like a manually ordered one on every
 later tick, including the depleted-rock path that returns it to `STATE_IDLE`
-(`miningRuntimeState.js:1016`), at which point this mod re-targets it.
+(`droneRuntime.js:7430-7436`, which calls `resetDroneToIdle`), at which point this mod re-targets it.
 
 ### 3.1 The "what to mine" queue
 
@@ -409,7 +407,7 @@ only choices a salvager has are which end of the field to start at and whose wre
   decides which tokens can match it. The bucket starts from the mining cache's `yieldKind`; moon ore
   is recognised by the rock's `generatedMoonOreChunk` flag or by the yield type's `groupID` being one
   of the five moon-asteroid families (`MOON_ORE_GROUP_IDS` in config.js - the same list
-  `autoMoonMiningService` keeps server-side).
+  `server/src/services/structure/moonExtractionRules.js:181` keeps server-side).
 - **The queue is a priority order, not a set.** `oreQueue.rank` returns the index of the first token
   a rock matches, and the assignment sort below is `rank` first, the grade preference next and the
   score last, so a rock the player queued first is mined before a closer one that matches a lower
@@ -463,7 +461,7 @@ only choices a salvager has are which end of the field to start at and whose wre
   kind comes from the game's own item types.** `lib/oreNames.js` builds a catalogue on first use out
   of `itemTypes` (item category 25 asteroids) and assigns each rock to ore, ice or moon by the group
   it sits in: group 465 and the `Ice` group name are ice, the five families
-  `services/structure/autoMoonMiningService.js` names are moon ore, everything else is ore. It is
+  `services/structure/moonExtractionRules.js` names are moon ore, everything else is ore. It is
   display only - the assignment loop still mines from the live mining state - and a rock seen in
   space is remembered with the kind `classifyTargetScope` gave it, so where the table and the
   running server disagree the reply follows the server. Built lazily through
@@ -575,13 +573,13 @@ part in the drone path - which is why section 5 judges a salvage squadron on car
 
 Every one of those modifiers is an additive `ItemModifier` onto attribute 458, so a plain sum is
 correct — there is no stacking penalty to model. The parts come from
-`droneDogma._testing.getControllerDogmaContext(ship)` (`droneDogma.js:452`), which returns the ship's
+`droneDogma._testing.getControllerDogmaContext(ship)` (`droneDogma.js:480`), which returns the ship's
 `skillMap`, `fittedItems` and a `fingerprint`; fitted modules are filtered through
-`isEffectivelyOnlineModule` (`liveFittingState.js:202`) and implants/boosters through
-`getActiveImplants` / `getActiveBoosters` (`activeImplantModifiers.js:712`, `:788`). A Rorqual with
+`isEffectivelyOnlineModule` (`liveFittingState.js:200`) and implants/boosters through
+`getActiveImplants` / `getActiveBoosters` (`activeImplantModifiers.js:710`, `:786`). A Rorqual with
 both drone skills at V and three Drone Link Augmentor I is 20000 + 40000 + 60000 = **120 km**.
 
-Attribute ids are looked up by name at runtime (`getAttributeIDByNames`, `liveFittingState.js:312`)
+Attribute ids are looked up by name at runtime (`getAttributeIDByNames`, `liveFittingState.js:310`)
 with the SDE ids as a fallback, so a future SDE rename degrades instead of breaking.
 
 The result is cached on the ship entity as `advancedUtilityDronesRange` and invalidated by the dogma
@@ -598,7 +596,7 @@ for every ship. That is the escape hatch for a server that wants a flat radius.
 
 ### 5.1 Hold full
 
-The trigger mirrors the vendor exactly. `resolveDroneMiningDestination` (`droneRuntime.js:2373`) walks
+The trigger mirrors the vendor exactly. `resolveDroneMiningDestination` (`droneRuntime.js:2567`) walks
 the bays in one fixed order:
 
 ```text
@@ -608,15 +606,15 @@ preferred bay (specialised ore / ice / gas hold, or the general mining hold)
 ```
 
 and takes the **first** bay with any room at all. The delivery itself then needs one whole unit of the
-yield to fit (`droneRuntime.js:6991-7000`; the comment there records why an `availableVolume <= 0` test
+yield to fit (`droneRuntime.js:7288-7299`; the comment there records why an `availableVolume <= 0` test
 alone was wrong), and when it does not fit the cycle is abandoned - the server never continues to the
 next bay. A mining hull therefore stops on its own mining bay: while that bay holds a sub-unit sliver
 the cargo hold behind it is unreachable, and the drone would otherwise mine forever without delivering
 anything.
 
 This mod reproduces the same order over `buildShipResourceState` + `listContainerItems`
-(`liveFittingState.js:3397`, `simulationInventoryProjection.js:176`), with the used-volume arithmetic
-copied from `miningRuntime.computeUsedVolume` (`miningRuntime.js:525`), including its singleton rule.
+(`liveFittingState.js:3444`, `simulationInventoryProjection.js:176`), with the used-volume arithmetic
+copied from `miningRuntime.computeUsedVolume` (`miningRuntime.js:499`), including its singleton rule.
 It judges the one bay the server would deliver into right now - not "some bay still has room" - and
 recalls the squadron once that bay can no longer take a whole unit. A hull with no mining bay of its
 own falls back to its cargo hold, which is then the bay that actually receives the ore.
@@ -624,8 +622,8 @@ own falls back to its cargo hold, which is then the bay that actually receives t
 ### 5.2 Under attack
 
 Drones carry the same `conditionState` as a ship — `{ damage, armorDamage, shieldCharge, ... }`
-(`itemStore.js:1550`) — written by the generic damage path (`server/src/space/combat/damage.js:374`,
-`:501`) against `shieldCapacity` / `armorHP` / `structureHP` (`droneRuntime.js:2793-2811`).
+(`itemStore.js:1518`) — written by the generic damage path (`server/src/space/combat/damage.js:404`,
+`:531`) against `shieldCapacity` / `armorHP` / `structureHP` (`droneRuntime.js:2987-3004`).
 
 Each scan computes `1 - currentHP/maxHP` and stores it as `drone.advancedUtilityDronesDamageFraction`. A
 drone whose fraction grows by more than `damageThreshold` (default 0, i.e. any damage at all) triggers
@@ -635,7 +633,7 @@ reads drone state is affected.
 
 ### 5.3 How the recall is issued
 
-`droneRuntime.commandReturnBay(session, droneIDs)` (`droneRuntime.js:4955`) — the same handler as
+`droneRuntime.commandReturnBay(session, droneIDs)` (`droneRuntime.js:5247`) — the same handler as
 `Handle_CmdReturnBay`. Each recalled drone is stamped with `advancedUtilityDronesRecalledAtMs = now`, and
 this mod will not re-task it for 120 s. That window matters: a returning drone is briefly still
 visible in the scene, and the stamp is the backstop if its `activityState`/`droneCommand` have not yet
@@ -646,15 +644,16 @@ switched away from idle.
 ## 6. Rocks that appear after the fact
 
 `ensureSceneMiningState` builds one cache per scene from `scene.staticEntities` and stores it on
-`scene._miningRuntimeState` (`miningRuntimeState.js:885-940`). Only the dungeon and
-generated-resource-site paths invalidate it. A moon-ore chunk added by
-`server/src/services/structure/moonOreChunkSpawner.js` therefore does not exist as far as any mining
-code is concerned until that cache is dropped — which blinds a manual mining laser and a manual drone
+`scene._miningRuntimeState` (`miningRuntimeState.js:887-940`). Only the dungeon and
+generated-resource-site paths invalidate it. A moon-ore chunk that appears after the fact — in
+0.12.9 an entity this mod recognises by the `generatedMoonOreChunk` flag, with no
+`moonOreChunkSpawner.js` module left to spawn it — therefore does not exist as far as any mining code
+is concerned until that cache is dropped — which blinds a manual mining laser and a manual drone
 order just as much as it blinds this mod.
 
 The cache is nothing but a view over `scene.staticEntities` plus the persisted per-system state, so
 dropping it re-derives identical data; that is precisely what the upstream invalidation sites do
-(`dungeonUniverseRuntime.js:3999`, `miningResourceSiteService.js:1640`). With
+(`dungeonUniverseRuntime.js:4040`, `miningResourceSiteService.js:1632`). With
 `refreshStaleSceneCache` (default on) this mod does the same, but only when it is trying to mine and
 finds nothing to mine:
 
@@ -720,14 +719,15 @@ the pass is logged and never propagated into `tickScene`.
 
 ## 8. Compatibility contract
 
-Verified against the other server-side mods installed on this server:
+Verified against the other server-side loader on this server, `autopilotJumpZero`. The remaining rows
+are third-party loaders this mod is built to compose with; none of them is present in this checkout:
 
 | Mod | What it touches | Interaction |
 |---|---|---|
 | `fourModeAsteroidBelts` | `Module._load` source transforms of `asteroidService.js` and `miningRuntimeState.js`; its own `executeChatCommand` overlay | None. It never rewrites `tickScene`, and the two chat overlays chain. Its transform is the reason this loader has to be preloaded last (2.1). |
 | `soloProgressionBalance` | `liveFittingState.js`, `space/runtime.js` and parts of `droneRuntime.js`; fitting and dogma overlays | None. It does not touch `tickScene`, and this mod only *reads* the helpers it replaces. |
 | `moonOreAnomalies` | `dungeonUniverseRuntime.js` and dungeon content packs | None. Different files entirely. |
-| `autopilotJumpZero` | `beyonceService.js`, and the launcher's `NODE_OPTIONS` list | None. Different files, and both blocks append, so both load. It has to stay *first* in the preload list and this mod *last* (2.1). |
+| `autopilotJumpZero` | `beyonceService.js` (and the launcher's `NODE_OPTIONS` list, where a native block is installed) | None. Different files, and both mods are preloaded by `docker/entrypoint.sh`. It has to stay *first* in the preload list and this mod *last* (2.1). |
 | `EveJS-MoonMining-Fix` | `moonMiningBootstrap.js`, `moonOreChunkSpawner.js` | None. Different files. Section 6 is what makes moon-ore chunks reachable. |
 | Any "more drones per hull" mod | Nothing this mod knows about | None, and that is the point. The kind of a drone is read from its own effects (1.1), the drone list comes from the scene rather than a fixed roster, and the claim ledger is sized by nothing. A hull that launches fifty drones puts all fifty to work. |
 
@@ -838,7 +838,10 @@ so it is the same content as the GitHub download. A player unzips it, drops the 
 runs `installer\install.bat`. The script refuses to run on a dirty working tree, reads the version out
 of `loader.js`, writes nothing but that one file, and prints its byte size, file count and sha256.
 `dist/` is git-ignored - the ZIP stays on the machine that builds it, is pasted into Discord, and is
-never pushed and never attached to a Release.
+never pushed and never attached to a Release. The packager itself is a **local tool**: it is excluded
+through `.git/info/exclude` (operator decision, 2026-10-01), so a clone of this repository does not
+contain `tools/`, and `tools/` is in `DEV_ONLY_DIRECTORIES` as well so it can never reach an installed
+`mods/` folder.
 
 What still matters is the pruning contract, which serves the installer alone: `installer/`, `tools/`,
 `dist/`, `node_modules/` and `.git/` are development-only and are listed in `DEV_ONLY_DIRECTORIES` in

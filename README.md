@@ -155,7 +155,7 @@ deployment it finds:
 | Deployment | Registered in | Entry added |
 |---|---|---|
 | Docker | `docker/entrypoint.sh`, in both `run_server()` and `run_all()` | `--require /app/mods/AdvancedUtilityDrones/loader.js` |
-| Native | `StartServer.bat`, whose `NODE_OPTIONS` both `npm start` branches inherit | `NODE_OPTIONS=--require "...\mods\AdvancedUtilityDrones\loader.js"` |
+| Native | `StartServer.bat`, once the installer has added its preload block (this checkout's launcher carries none - the mods here are registered in `docker/entrypoint.sh`) | `NODE_OPTIONS=--require "...\mods\AdvancedUtilityDrones\loader.js"` |
 
 The entry is appended **last** in the continuation list on purpose: require order is
 `Module._load` hook order, and only the last-installed hook sees the exports object the final
@@ -423,18 +423,19 @@ Does not touch:
 ## Compatibility
 
 This mod adds no source transform and pins no file hash, so it cannot conflict with a mod that
-rewrites the same files. It wraps exactly two exports after everything else has loaded:
-`droneRuntime.tickScene` and `chatCommands.executeChatCommand`. It additionally *chains* the nine
+rewrites the same files. It wraps exactly three module targets after everything else has loaded:
+`droneRuntime.tickScene`, `chatCommands.executeChatCommand` and
+`chatRuntime.broadcastLocalMessage` (with `sendChannelMessage`, so the trigger behaves the same in a
+non-local channel). It additionally *chains* `droneRuntime.launchDronesForSession` and the nine
 player-facing drone order functions (`commandMineRepeatedly`, `commandEngage`, ...) purely to observe
 them: each wrapper calls the original and returns its result unchanged, so another mod that wraps or
 replaces them still sees the same behaviour.
 
-Verified against the other server-side mods on this server - `fourModeAsteroidBelts`,
-`soloProgressionBalance`, `moonOreAnomalies` and `autopilotJumpZero`. None of them touches
-`tickScene`, and each composes with the others' `executeChatCommand` overlay by chaining.
-`fourModeAsteroidBelts` rewrites `droneRuntime.js` by compiling transformed source, which is exactly
-why this loader must be preloaded **last**: a mod that replaces the whole exports object would
-discard a patch applied to the previous one.
+Verified against the other server-side mod on this server, `autopilotJumpZero`. It touches different
+files and does not touch `tickScene`, so the two loaders compose. A third-party mod that rewrites
+`droneRuntime.js` by compiling transformed source is exactly why this loader must be preloaded
+**last**: a mod that replaces the whole exports object would discard a patch applied to the previous
+one.
 
 ## Limitations
 
