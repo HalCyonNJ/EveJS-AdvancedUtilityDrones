@@ -6,7 +6,7 @@
 > straight to the code.
 
 **Target:** EveJS 0.12.9 (SDE build 3396210)
-**Mod version:** 1.0.3 · **Manifest kind:** `loader` · **Backends:** native and Docker
+**Mod version:** 1.0.4 · **Manifest kind:** `loader` · **Backends:** native and Docker
 **Runtime requirement:** Node.js 18+ (the installer needs it on `PATH` too)
 
 ---
@@ -860,6 +860,21 @@ it added to the configuration.
 
 `README.md` documents the runtime behaviour an operator needs, and `HOW-IT-WORKS.md` rides along in the
 payload because it is the contract whoever maintains a fork has to keep.
+
+### The third-party launcher
+
+`evejs-launcher.mod.json` is what makes this folder installable from the third-party **EveJS
+Launcher**'s `Mods > Add ZIP`. It declares `schemaVersion: 3`, `"kind": "loader"`,
+`"activation": { "strategy": "loader_rename" }`, `supportedBackends: ["native", "docker"]`,
+`compatibility.evejsVersions: ["0.12.9"]` and `restart: "game_server"`, i.e. the entry describes the
+very preload the installer registers in `docker/entrypoint.sh` or `StartServer.bat`, and the launcher
+enables it by renaming the loader payload rather than by patching anything. There is no client half -
+no client component, no login handshake and no vendor patch step. The manifest declares no `settings`
+block, so the launcher's Configure panel has nothing to offer this mod and the launcher never writes
+`config/advancedUtilityDrones.json` or the per-character file; those belong to the installer and the
+mod. **The launcher path is implemented but untested by us**: no EveJS Launcher exists on the machine
+this mod is developed on, so treat it as unverified and fall back to the native or Docker install if
+anything looks wrong.
 
 ### Finding the EveJS root
 

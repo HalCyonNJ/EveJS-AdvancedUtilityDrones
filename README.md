@@ -172,12 +172,42 @@ Native : restart the server with StartServer.bat
 A healthy boot logs five lines:
 
 ```text
-[AdvancedUtilityDrones] v1.0.3 loader ready - control range follows the ship by default; ...
+[AdvancedUtilityDrones] v1.0.4 loader ready - control range follows the ship by default; ...
 [AdvancedUtilityDrones] per-character choices live in ...config/advancedUtilityDrones.players.json (loaded: 0 character(s)); the /aud command and the plain-chat !aud trigger work for every character (/aud mining for the mining drones, /aud salvage for the salvage drones)
 [AdvancedUtilityDrones] plain-chat trigger installed - !aud works for every character, staff or not, and the line is never broadcast
 [AdvancedUtilityDrones] chat command overlay installed - /aud works for every character and needs no staff rights
 [AdvancedUtilityDrones] drone tick hook installed - idle drones are re-tasked every 500 ms (mining spread, salvage spread)
 ```
+
+### EveJS Launcher (third-party)
+
+The third-party **EveJS Launcher** installs a mod from a ZIP, and this folder is already
+the package it wants: `evejs-launcher.mod.json` sits beside `loader.js`, and the archive
+built by `tools\BuildPackage.bat` has `AdvancedUtilityDrones\` as its single top-level
+folder - the name the preload expects.
+
+1. **Mods > Add ZIP**, and pick the ZIP from the release page - or the local
+   `dist\AdvancedUtilityDrones-<version>.zip`. (GitHub's own `Source code (zip)` unpacks as
+   `EveJS-AdvancedUtilityDrones-<version>\`; rename that folder to `AdvancedUtilityDrones`
+   if you use it instead.)
+2. Turn on the toggle beside **Advanced Utility Drones**.
+3. There is no Configure panel: the manifest declares no `settings` block, so the mod is
+   configured through `config/advancedUtilityDrones.json` or its environment variables (see
+   Configuration).
+4. Restart the game server when the launcher asks. A Docker deployment still needs
+   `docker compose build && docker compose up -d --no-deps server`, because `mods/` is
+   baked into the image; a native one is a restart with `StartServer.bat`.
+
+The manifest declares `kind: "loader"` and `activation.strategy: "loader_rename"`, and this
+mod is server-side only: no client component, no login handshake and no vendor patch step,
+so the launcher has no client half to prepare. Its configuration files live under
+`<EveJS root>\config\` and are written by the installer and by the mod, never by the
+launcher; a disable or a remove leaves them where they are.
+
+**Implemented, not verified:** no EveJS Launcher is available on the machine this mod is
+developed on, so this install path has **not been tested by the authors**. Treat it as
+unverified - if anything looks wrong, fall back to `installer\install.bat` for a Windows
+native install or to the Docker rebuild above.
 
 ### Updating
 

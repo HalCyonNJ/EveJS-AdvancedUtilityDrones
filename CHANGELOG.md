@@ -10,6 +10,32 @@ stays exactly as it is: the installer only adds the keys a later release introdu
 file with the release it was brought up to. A server keeps its settings and every player keeps their
 saved choices.
 
+## 1.0.4 - 2026-10-03
+
+### Added
+
+- **The third-party EveJS Launcher is documented as a third installation path**, beside the native
+  Windows installer and Docker. `README.md` covers `Mods > Add ZIP` with the release ZIP, enabling
+  the entry, the restart of the game server, and how to disable or remove the mod;
+  `HOW-IT-WORKS.md` §10 records what the manifest declares (`kind: "loader"`,
+  `activation.strategy: "loader_rename"`, `supportedBackends: ["native", "docker"]`), that there is
+  no client half, and that the launcher never writes this mod's configuration files.
+
+### Notes
+
+- **The launcher path is implemented but has not been tested by the authors:** no EveJS Launcher is
+  available on the machine this mod is developed on, so it is unverified, and the native or Docker
+  install is the fallback. The same sentence appears in `README.md` and `HOW-IT-WORKS.md`.
+- **No behaviour changes.** No drone, recall, command, configuration or installer logic is touched;
+  the release version moves in `loader.js`, `lib/runtime.js`, the two chat overlays, the launcher
+  manifest and the documents that print it.
+
+### Verification
+
+- The development suite passes **122/122**.
+
+---
+
 ## 1.0.3 - 2026-09-25
 
 ### Changed
